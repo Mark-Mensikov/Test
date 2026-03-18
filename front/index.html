@@ -132,30 +132,38 @@
         }
 
         async function loadPosts() {
-            const container = document.getElementById('posts-list');
-            try {
-                // expand=author võimaldab meil näha, kas postituse autor on VIP (verified)
-                const posts = await pb.collection('posts').getFullList({ sort: '-votes', expand: 'author' });
-                container.innerHTML = posts.map(p => {
-                    const authorIsVip = p.expand?.author?.verified;
-                    return `
-                        <div class="card post ${authorIsVip ? 'is-vip' : ''}">
-                            <div class="vote-section">
-                                <button onclick="vote('${p.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>▲</button>
-                                <span class="vote-count">${p.votes || 0}</span>
-                            </div>
-                            <div style="flex:1">
-                                <span class="status-badge">${p.status}</span>
-                                ${authorIsVip ? '<span class="vip-badge">VIP AUTOR</span>' : ''}
-                                <h3 style="margin: 8px 0 4px 0">${p.title}</h3>
-                                <p style="margin:0; color:#666; font-size:14px;">${p.description || ''}</p>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-            } catch (e) { container.innerHTML = "Postituste laadimine ebaõnnestus."; }
-        }
+    const container = document.getElementById('posts-list');
+    try {
+        const posts = await pb.collection('posts').getFullList({ sort: '-votes', expand: 'author' });
+        container.innerHTML = posts.map(p => {
+            const authorIsVip = p.expand?.author?.verified;
+            // Проверяем: является ли текущий юзер автором И випом
+            const canEdit = pb.authStore.isValid && pb.authStore.model.id === p.author && pb.authStore.model.verified;
 
+            return `
+                <div class="card post ${authorIsVip ? 'is-vip' : ''}">
+                    <div class="vote-section">
+                        <button onclick="vote('${p.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>▲</button>
+                        <span class="vote-count">${p.votes || 0}</span>
+                    </div>
+                    <div style="flex:1">
+                        <span class="status-badge">${p.status}</span>
+                        ${authorIsVip ? '<span class="vip-badge">VIP AUTOR</span>' : ''}
+                        
+                        <h3 id="title-${p.id}" style="margin: 8px 0 4px 0">${p.title}</h3>
+                        <p id="desc-${p.id}" style="margin:0; color:#666; font-size:14px;">${p.description || ''}</p>
+                        
+                        ${canEdit ? `
+                            <div style="margin-top: 10px;">
+                                <button onclick="startEdit('${p.id}')" style="background:#6c757d; font-size:12px; padding:5px 10px;">Muuda</button>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) { container.innerHTML = "Viga laadimisel."; }
+}
         async function vote(postId) {
             try {
                 await pb.collection('votes').create({ user: pb.authStore.model.id, post: postId });
@@ -186,6 +194,25 @@
         function logout() { pb.authStore.clear(); location.reload(); }
 
         window.onload = init;
+        async function startEdit(postId) {
+    const titleEl = document.getElementById(`title-${postId}`);
+    const descEl = document.getElementById(`desc-${postId}`);
+    
+    const newTitle = prompt("Uus pealkiri:", titleEl.innerText);
+    const newDesc = prompt("Uus kirjeldus:", descEl.innerText);
+    
+    if (newTitle !== null && newTitle !== "") {
+        try {
+            await pb.collection('posts').update(postId, {
+                title: newTitle,
+                description: newDesc
+            });
+            loadPosts(); // Перезагружаем список
+        } catch (e) {
+            alert("Viga muutmises: " + e.message);
+        }
+    }
+}
     </script>
 </body>
 </html>
