@@ -76,7 +76,10 @@
                 if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
                     try {
                         // Uuendame kasutaja staatust. Kui 'verified' ei tööta, kasuta 'is_pro'
-                        await pb.collection('users').update(pb.authStore.model.id, { "verified": true });
+                        // Замени блок обновления на этот:
+await pb.collection('users').update(pb.authStore.model.id, { 
+    "is_pro": true 
+});
                         await pb.collection('users').authRefresh();
                         window.history.replaceState({}, document.title, "/");
                         alert("Makse õnnestus! Oled nüüd VIP kasutaja.");
@@ -103,7 +106,7 @@
 
             if (pb.authStore.isValid) {
                 const user = pb.authStore.model;
-                const isVip = user.verified; 
+const isVip = user.is_pro;
                 authSection.innerHTML = `
                     <span>${user.email} ${isVip ? '<span class="vip-badge">VIP</span>' : ''}</span>
                     <button onclick="logout()" style="background:var(--danger); margin-left:10px;">Välju</button>
@@ -147,8 +150,8 @@
                 const isAdmin = user?.is_admin === true;
 
                 container.innerHTML = posts.map(p => {
-                    const authorIsVip = p.expand?.author?.verified;
-                    const canEdit = pb.authStore.isValid && ((user?.id === p.author && user?.verified) || isAdmin);
+                    const authorIsVip = p.expand?.author?.is_pro;
+const canEdit = pb.authStore.isValid && ((user?.id === p.author && user?.is_pro) || isAdmin);
                     const canDelete = pb.authStore.isValid && isAdmin;
 
                     return `
