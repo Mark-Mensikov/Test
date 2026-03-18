@@ -1,86 +1,148 @@
-<div id="auth-status"></div>
-<div id="posts-container">Laadin andmeid...</div>
+<!DOCTYPE html>
+<html lang="et">
+<head>
+    <meta charset="UTF-8">
+    <title>Tagasiside Portaal</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pocketbase/0.21.1/pocketbase.umd.js"></script>
+    
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #f4f7f6; }
+        .entry { background: white; padding: 20px; margin-bottom: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .badge { background: #e0e0e0; padding: 4px 8px; border-radius: 4px; font-size: 12px; text-transform: uppercase; }
+        .form-group { background: white; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+        input, textarea { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { cursor: pointer; padding: 10px 15px; border: none; border-radius: 4px; background: #007bff; color: white; }
+        button:disabled { background: #ccc; }
+        .vote-btn { background: #28a745; font-weight: bold; }
+    </style>
+</head>
+<body>
 
-<script>
-    let pb;
+    <div id="auth-status" style="text-align: right; margin-bottom: 20px;"></div>
 
-    async function initApp() {
-        try {
-            const config = await fetch('/config').then(res => res.json());
-            pb = new PocketBase(config.pbUrl);
+    <div id="post-form-container" class="form-group" style="display: none;">
+        <h3>Lisa uus ettepanek</h3>
+        <input type="text" id="post-title" placeholder="Pealkiri (nt. Lisa tume režiim)">
+        <textarea id="post-desc" placeholder="Kirjeldus..."></textarea>
+        <button onclick="createNewPost()">Saada ettepanek</button>
+    </div>
 
-            // Проверка авторизации
-            updateAuthUI();
-            // Загрузка постов
-            loadPosts();
-        } catch (e) { console.error(e); }
-    }
+    <h2>Kõik ettepanekud</h2>
+    <div id="posts-container">Laadin andmeid...</div>
 
-    function updateAuthUI() {
-        const status = document.getElementById('auth-status');
-        if (pb.authStore.isValid) {
-            status.innerHTML = `Tere, ${pb.authStore.model.email}! <button onclick="logout()">Logi välja</button>`;
-        } else {
-            status.innerHTML = `<button onclick="login()">Logi sisse (Test-User)</button>`;
+    <script>
+        let pb;
+
+        async function initApp() {
+            try {
+                // Ждем загрузки конфига с нашего сервера
+                const config = await fetch('/config').then(res => res.json());
+                
+                // Инициализируем SDK
+                pb = new PocketBase(config.pbUrl);
+
+                updateAuthUI();
+                loadPosts();
+            } catch (e) { 
+                console.error("SDK initialization failed:", e); 
+            }
         }
-    }
 
-    async function loadPosts() {
-        const container = document.getElementById('posts-container');
-        // Получаем посты, сортируем по количеству голосов
-        const records = await pb.collection('posts').getFullList({
-            sort: '-votes',
-        });
+        function updateAuthUI() {
+            const statusDiv = document.getElementById('auth-status');
+            const formContainer = document.getElementById('post-form-container');
 
-        container.innerHTML = records.map(post => `
-            <div class="entry">
-                <h3>${post.title}</h3>
-                <p>${post.description || ''}</p>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <button onclick="vote('${post.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>
-                        ▲ Upvote (${post.votes})
-                    </button>
-                    <span class="badge">${post.status}</span>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    async function vote(postId) {
-        if (!pb.authStore.isValid) return alert("Logi sisse, et hääletada!");
-
-        try {
-            // 1. Создаем запись в коллекции votes
-            await pb.collection('votes').create({
-                user: pb.authStore.model.id,
-                post: postId
-            });
-
-            // 2. Увеличиваем счетчик в коллекции posts
-            // В идеале это делается через API Rule или серверную функцию, 
-            // но для MVP можно обновить напрямую:
-            const post = await pb.collection('posts').getOne(postId);
-            await pb.collection('posts').update(postId, {
-                votes: (post.votes || 0) + 1
-            });
-
-            loadPosts(); // Обновляем список
-        } catch (err) {
-            alert("Sa oled juba hääletanud selle poolt!");
+            if (pb.authStore.isValid) {
+                statusDiv.innerHTML = `👤 ${pb.authStore.model.email} | <button onclick="logout()" style="background:#dc3545">Logi välja</button>`;
+                formContainer.style.display = 'block';
+            } else {
+                statusDiv.innerHTML = `<button onclick="login()">Logi sisse (Test-kasutaja)</button>`;
+                formContainer.style.display = 'none';
+            }
         }
-    }
 
-    function logout() {
-        pb.authStore.clear();
-        location.reload();
-    }
+        async function loadPosts() {
+            const container = document.getElementById('posts-container');
+            try {
+                const records = await pb.collection('posts').getFullList({
+                    sort: '-votes',
+                });
 
-    async function login() {
-        // Для теста: создайте пользователя в PocketBase вручную и впишите данные сюда
-        // Или сделайте полноценную форму логина
-        await pb.collection('users').authWithPassword('test@test.ee', '1234567890');
-        location.reload();
-    }
+                container.innerHTML = records.map(post => `
+                    <div class="entry">
+                        <span class="badge">${post.status || 'new'}</span>
+                        <h3>${post.title}</h3>
+                        <p>${post.description || ''}</p>
+                        <button class="vote-btn" onclick="vote('${post.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>
+                            ▲ Upvote (${post.votes || 0})
+                        </button>
+                    </div>
+                `).join('');
+            } catch (err) {
+                container.innerHTML = "Andmete laadimine ebaõnnestus.";
+            }
+        }
 
-    initApp();
-</script>
+        async function createNewPost() {
+            const title = document.getElementById('post-title').value;
+            const description = document.getElementById('post-desc').value;
+
+            if (!title) return alert("Pealkiri on kohustuslik!");
+
+            try {
+                await pb.collection('posts').create({
+                    title: title,
+                    description: description,
+                    votes: 0,
+                    status: 'under-review',
+                    author: pb.authStore.model.id
+                });
+                
+                document.getElementById('post-title').value = '';
+                document.getElementById('post-desc').value = '';
+                loadPosts();
+            } catch (err) {
+                alert("Viga postituse loomisel: " + err.message);
+            }
+        }
+
+        async function vote(postId) {
+            try {
+                // Создаем запись о голосе
+                await pb.collection('votes').create({
+                    user: pb.authStore.model.id,
+                    post: postId
+                });
+
+                // Получаем текущий пост и обновляем счетчик
+                const post = await pb.collection('posts').getOne(postId);
+                await pb.collection('posts').update(postId, {
+                    votes: (post.votes || 0) + 1
+                });
+
+                loadPosts();
+            } catch (err) {
+                alert("Sa oled juba hääletanud selle poolt või tekkis viga.");
+            }
+        }
+
+        function logout() {
+            pb.authStore.clear();
+            location.reload();
+        }
+
+        async function login() {
+            try {
+                // ЗАМЕНИТЕ на реальные данные вашего тестового юзера из PocketBase
+                await pb.collection('users').authWithPassword('test@test.ee', '1234567890');
+                location.reload();
+            } catch (err) {
+                alert("Logimine ebaõnnestus. Kontrolli kasutajat PocketBase-is.");
+            }
+        }
+
+        // Запуск после полной загрузки окна
+        window.onload = initApp;
+    </script>
+</body>
+</html>
