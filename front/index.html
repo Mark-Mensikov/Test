@@ -14,19 +14,19 @@
         button { cursor: pointer; padding: 10px 20px; border: none; border-radius: 6px; background: var(--primary); color: white; font-weight: bold; transition: 0.2s; }
         button:hover { opacity: 0.8; }
         
-        /* Значки статусов */
-        .vip-badge { background: var(--vip); color: #333; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #b8860b; margin-left: 5px; display: inline-block; }
-        .admin-badge { background: var(--admin); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 5px; display: inline-block; }
+        /* Статусы авторов */
+        .vip-badge { background: var(--vip); color: #333; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #b8860b; margin-left: 5px; }
+        .admin-badge { background: var(--admin); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 5px; }
         
-        /* Стили постов */
+        /* Стили карточек */
         .post { display: flex; gap: 20px; border-left: 5px solid var(--primary); transition: 0.3s; }
         .post.is-vip { border-left-color: var(--vip); background: #fffdf0; }
         .post.is-admin-post { border-left-color: var(--admin); background: #fff5f5; border-left-width: 8px; }
 
         .vote-section { text-align: center; min-width: 60px; }
         .vote-count { display: block; font-size: 24px; font-weight: bold; margin: 5px 0; }
-        .status-badge { font-size: 11px; padding: 3px 12px; border-radius: 12px; background: #eee; text-transform: uppercase; color: #666; font-weight: bold; }
-        .author-info { font-size: 12px; color: #888; margin-bottom: 4px; }
+        .status-badge { font-size: 11px; padding: 3px 10px; border-radius: 12px; background: #eee; text-transform: uppercase; color: #666; font-weight: bold; }
+        .author-info { font-size: 12px; color: #888; }
         .nav-link { color: var(--primary); cursor: pointer; text-decoration: underline; font-size: 14px; }
     </style>
 </head>
@@ -56,18 +56,18 @@
     </div>
 
     <div id="vip-promo" class="card" style="display: none; background: linear-gradient(135deg, #fff9c4 0%, #ffffff 100%); border: 1px solid #ffe082;">
-        <strong>Toeta meid ja saa VIP staatus!</strong> 15€ eest saad kuldse märgi ja Sinu ettepanekud tõstetakse esile.
-        <br><br>
+        <strong>Toeta meid ja saa VIP staatus!</strong>
+        <br>
         <a href="https://buy.stripe.com/test_aFacN53uE0TNgqoeEHe7m02">
-            <button style="background: var(--vip); color: #000; border: 1px solid #b8860b;">Osta VIP staatus</button>
+            <button style="background: var(--vip); color: #000; margin-top: 10px;">Osta VIP staatus</button>
         </a>
     </div>
 
     <div id="new-post-form" class="card" style="display: none;">
         <h3>Lisa uus ettepanek</h3>
         <input type="text" id="post-title" placeholder="Pealkiri">
-        <textarea id="post-desc" rows="3" placeholder="Kirjelda oma ideed..."></textarea>
-        <button onclick="createNewPost()">Saada ettepanek</button>
+        <textarea id="post-desc" rows="3" placeholder="Kirjeldus..."></textarea>
+        <button onclick="createNewPost()">Saada</button>
     </div>
 
     <div id="posts-list">Laadin...</div>
@@ -80,6 +80,7 @@
                 const config = await fetch('/config').then(res => res.json());
                 pb = new PocketBase(config.pbUrl);
 
+                // Обработка возврата со Stripe
                 const urlParams = new URLSearchParams(window.location.search);
                 if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
                     await pb.collection('users').update(pb.authStore.model.id, { "is_pro": true });
@@ -91,7 +92,7 @@
 
                 renderUI();
                 loadPosts();
-            } catch (e) { console.error("Init error:", e); }
+            } catch (e) { console.error(e); }
         }
 
         function renderUI() {
@@ -114,6 +115,7 @@
                 vipPromo.style.display = (user.is_pro || user.is_admin) ? 'none' : 'block';
             } else {
                 authSection.innerHTML = `<button onclick="document.getElementById('auth-forms').style.display='block'">Logi sisse</button>`;
+                vipPromo.style.display = 'block'; // Гости видят баннер
             }
         }
 
@@ -137,6 +139,7 @@
                     const canEdit = pb.authStore.isValid && ((currentUser?.id === p.author && currentUser?.is_pro) || currentIsAdmin);
                     const canDelete = pb.authStore.isValid && currentIsAdmin;
 
+                    // Классы карточки
                     let postClasses = 'card post';
                     if (authorIsAdmin) postClasses += ' is-admin-post';
                     else if (authorIsVip) postClasses += ' is-vip';
@@ -166,7 +169,7 @@
                                     ${currentIsAdmin ? `
                                         <button onclick="toggleVip('${p.author}', ${authorIsVip})" 
                                                 style="background: ${authorIsVip ? '#6c757d' : 'var(--vip)'}; color: ${authorIsVip ? 'white' : 'black'}; font-size:11px; padding:5px 10px;">
-                                            ${authorIsVip ? 'Eemalda VIP' : 'Anna VIP'}
+                                            ${authorIsVip ? 'Võta VIP ära' : 'Anna VIP'}
                                         </button>
                                     ` : ''}
                                 </div>
@@ -178,11 +181,11 @@
         }
 
         async function toggleVip(userId, currentStatus) {
-            if (!confirm(currentStatus ? "Võtta VIP staatus ära?" : "Anda VIP staatus?")) return;
+            if (!confirm("Muuda kasutaja staatust?")) return;
             try {
                 await pb.collection('users').update(userId, { "is_pro": !currentStatus });
-                alert("Kasutaja staatus muudetud!");
-                loadPosts(); // Обновляем список сразу
+                alert("Tehtud!");
+                loadPosts(); 
             } catch (e) { alert("Viga: " + e.message); }
         }
 
@@ -190,21 +193,21 @@
             if (!pb.authStore.isValid) return alert("Logi sisse!");
             try {
                 const post = await pb.collection('posts').getOne(postId);
-                if (post.author === pb.authStore.model.id) return alert("Oma postituse poolt ei saa hääletada!");
+                if (post.author === pb.authStore.model.id) return alert("Oma poolt ei hääletata!");
                 await pb.collection('votes').create({ user: pb.authStore.model.id, post: postId });
                 await pb.collection('posts').update(postId, { "votes+": 1 });
                 loadPosts();
-            } catch (e) { alert("Sa oled juba hääletanud!"); }
+            } catch (e) { alert("Oled juba hääletanud!"); }
         }
 
         async function createNewPost() {
             const title = document.getElementById('post-title').value;
-            if(!title) return alert("Pealkiri puudu!");
+            if(!title) return;
             try {
                 await pb.collection('posts').create({
                     title: title,
                     description: document.getElementById('post-desc').value,
-                    votes: 0, status: 'under-review', author: pb.authStore.model.id
+                    votes: 0, status: 'uue', author: pb.authStore.model.id
                 });
                 location.reload();
             } catch (e) { alert(e.message); }
@@ -216,40 +219,33 @@
             const newTitle = prompt("Uus pealkiri:", titleEl.innerText);
             const newDesc = prompt("Uus kirjeldus:", descEl.innerText);
             if (newTitle) {
-                try {
-                    await pb.collection('posts').update(postId, { title: newTitle, description: newDesc });
-                    loadPosts();
-                } catch (e) { alert("Viga!"); }
+                await pb.collection('posts').update(postId, { title: newTitle, description: newDesc });
+                loadPosts();
             }
         }
 
         async function deletePost(postId) {
-            if (!confirm("Kustutada?")) return;
-            try {
+            if (confirm("Kustutada?")) {
                 await pb.collection('posts').delete(postId);
                 loadPosts();
-            } catch (e) { alert("Viga!"); }
+            }
         }
 
         async function handleLogin() {
             try {
-                await pb.collection('users').authWithPassword(
-                    document.getElementById('login-email').value,
-                    document.getElementById('login-pass').value
-                );
+                await pb.collection('users').authWithPassword(document.getElementById('login-email').value, document.getElementById('login-pass').value);
                 location.reload();
-            } catch (e) { alert("Viga sisselogimisel!"); }
+            } catch (e) { alert("Viga!"); }
         }
 
         async function handleRegister() {
             const email = document.getElementById('reg-email').value;
             const password = document.getElementById('reg-pass').value;
-            const passwordConfirm = document.getElementById('reg-pass-confirm').value;
             try {
-                await pb.collection('users').create({ email, password, passwordConfirm, is_pro: false, is_admin: false });
+                await pb.collection('users').create({ email, password, passwordConfirm: password, is_pro: false, is_admin: false });
                 await pb.collection('users').authWithPassword(email, password);
                 location.reload();
-            } catch (e) { alert("Viga: " + e.message); }
+            } catch (e) { alert(e.message); }
         }
 
         function toggleAuth(showReg) {
