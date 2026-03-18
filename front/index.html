@@ -21,6 +21,10 @@
         /* Post styles */
         .post { display: flex; gap: 20px; border-left: 5px solid var(--primary); transition: 0.3s; }
         .post.is-vip { border-left-color: var(--vip); background: #fffdf0; }
+        
+        /* НОВОЕ: Стиль для постов админа */
+        .post.is-admin-post { border-left-color: var(--admin); background: #fff5f5; border-left-width: 8px; }
+
         .vote-section { text-align: center; min-width: 60px; }
         .vote-count { display: block; font-size: 24px; font-weight: bold; margin: 5px 0; }
         .status-badge { font-size: 11px; padding: 3px 8px; border-radius: 12px; background: #eee; text-transform: uppercase; color: #666; }
@@ -78,7 +82,6 @@
                 const config = await fetch('/config').then(res => res.json());
                 pb = new PocketBase(config.pbUrl);
 
-                // Stripe success check
                 const urlParams = new URLSearchParams(window.location.search);
                 if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
                     try {
@@ -114,7 +117,10 @@
                 `;
                 postForm.style.display = 'block';
                 authForms.style.display = 'none';
-                vipPromo.style.display = user.is_pro ? 'none' : 'block';
+                
+                // СКРЫВАЕМ баннер, если пользователь VIP ИЛИ АДМИН
+                vipPromo.style.display = (user.is_pro || user.is_admin) ? 'none' : 'block';
+                
             } else {
                 authSection.innerHTML = `<button onclick="document.getElementById('auth-forms').style.display='block'">Logi sisse</button>`;
                 postForm.style.display = 'none';
@@ -127,16 +133,23 @@
             try {
                 const posts = await pb.collection('posts').getFullList({ sort: '-votes', expand: 'author' });
                 const currentUser = pb.authStore.model;
-                const isAdmin = currentUser?.is_admin === true;
+                const currentIsAdmin = currentUser?.is_admin === true;
 
                 container.innerHTML = posts.map(p => {
                     const author = p.expand?.author;
                     const authorIsVip = author?.is_pro;
-                    const canEdit = pb.authStore.isValid && ((currentUser?.id === p.author && currentUser?.is_pro) || isAdmin);
-                    const canDelete = pb.authStore.isValid && isAdmin;
+                    const authorIsAdmin = author?.is_admin; // Проверка, является ли автор поста админом
+                    
+                    const canEdit = pb.authStore.isValid && ((currentUser?.id === p.author && currentUser?.is_pro) || currentIsAdmin);
+                    const canDelete = pb.authStore.isValid && currentIsAdmin;
+
+                    // Собираем классы для карточки поста
+                    let postClasses = 'card post';
+                    if (authorIsAdmin) postClasses += ' is-admin-post';
+                    else if (authorIsVip) postClasses += ' is-vip';
 
                     return `
-                        <div class="card post ${authorIsVip ? 'is-vip' : ''}">
+                        <div class="${postClasses}">
                             <div class="vote-section">
                                 <button onclick="vote('${p.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>▲</button>
                                 <span class="vote-count">${p.votes || 0}</span>
@@ -146,7 +159,7 @@
                                     <span class="status-badge">${p.status}</span>
                                     <span class="author-info">Autor: ${author?.email || 'Peidetud'}</span>
                                 </div>
-                                ${authorIsVip ? '<span class="vip-badge">VIP AUTOR</span>' : ''}
+                                ${authorIsAdmin ? '<span class="admin-badge">ADMIN POSTITUS</span>' : (authorIsVip ? '<span class="vip-badge">VIP AUTOR</span>' : '')}
                                 
                                 <h3 id="title-${p.id}" style="margin: 8px 0 4px 0">${p.title}</h3>
                                 <p id="desc-${p.id}" style="margin:0; color:#666; font-size:14px;">${p.description || ''}</p>
@@ -155,7 +168,7 @@
                                     ${canEdit ? `<button onclick="startEdit('${p.id}')" style="background:#6c757d; font-size:11px; padding:4px 8px;">Muuda</button>` : ''}
                                     ${canDelete ? `<button onclick="deletePost('${p.id}')" style="background:var(--danger); font-size:11px; padding:4px 8px;">Kustuta</button>` : ''}
                                     
-                                    ${isAdmin ? `
+                                    ${currentIsAdmin ? `
                                         <button onclick="toggleVip('${p.author}', ${authorIsVip})" 
                                                 style="background: ${authorIsVip ? '#6c757d' : 'var(--vip)'}; color: ${authorIsVip ? 'white' : 'black'}; font-size:11px; padding:4px 8px;">
                                             ${authorIsVip ? 'Võta VIP ära' : 'Anna VIP'}
@@ -169,6 +182,7 @@
             } catch (e) { container.innerHTML = "Viga laadimisel."; }
         }
 
+        // --- Все остальные функции без изменений ---
         async function toggleVip(userId, currentStatus) {
             if (!confirm(currentStatus ? "Eemaldada VIP staatus?" : "Anda VIP staatus?")) return;
             try {
