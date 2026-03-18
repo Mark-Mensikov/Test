@@ -129,35 +129,42 @@
         }
 
         async function loadPosts() {
-            const container = document.getElementById('posts-list');
-            try {
-                const posts = await pb.collection('posts').getFullList({ sort: '-votes', expand: 'author' });
-                container.innerHTML = posts.map(p => {
-                    const authorIsVip = p.expand?.author?.verified;
-                    const canEdit = pb.authStore.isValid && pb.authStore.model.id === p.author && pb.authStore.model.verified;
+    const container = document.getElementById('posts-list');
+    try {
+        const posts = await pb.collection('posts').getFullList({ sort: '-votes', expand: 'author' });
+        
+        // Получаем данные текущего пользователя
+        const currentUser = pb.authStore.model;
+        const isAdmin = currentUser?.is_admin === true;
 
-                    return `
-                        <div class="card post ${authorIsVip ? 'is-vip' : ''}">
-                            <div class="vote-section">
-                                <button onclick="vote('${p.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>▲</button>
-                                <span class="vote-count">${p.votes || 0}</span>
-                            </div>
-                            <div style="flex:1">
-                                <span class="status-badge">${p.status}</span>
-                                ${authorIsVip ? '<span class="vip-badge">VIP AUTOR</span>' : ''}
-                                <h3 id="title-${p.id}" style="margin: 8px 0 4px 0">${p.title}</h3>
-                                <p id="desc-${p.id}" style="margin:0; color:#666; font-size:14px;">${p.description || ''}</p>
-                                ${canEdit ? `
-                                    <div style="margin-top: 10px;">
-                                        <button onclick="startEdit('${p.id}')" style="background:#6c757d; font-size:12px; padding:5px 10px;">Muuda</button>
-                                    </div>
-                                ` : ''}
-                            </div>
+        container.innerHTML = posts.map(p => {
+            const authorIsVip = p.expand?.author?.verified;
+            const canEdit = pb.authStore.isValid && (currentUser.id === p.author && currentUser.verified || isAdmin);
+
+            return `
+                <div class="card post ${authorIsVip ? 'is-vip' : ''}">
+                    <div class="vote-section">
+                        <button onclick="vote('${p.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>▲</button>
+                        <span class="vote-count">${p.votes || 0}</span>
+                    </div>
+                    <div style="flex:1">
+                        <span class="status-badge">${p.status}</span>
+                        ${authorIsVip ? '<span class="vip-badge">VIP AUTOR</span>' : ''}
+                        
+                        <h3 id="title-${p.id}" style="margin: 8px 0 4px 0">${p.title}</h3>
+                        <p id="desc-${p.id}" style="margin:0; color:#666; font-size:14px;">${p.description || ''}</p>
+                        
+                        <div style="margin-top: 10px; display: flex; gap: 10px;">
+                            ${canEdit ? `<button onclick="startEdit('${p.id}')" style="background:#6c757d; font-size:12px; padding:5px 10px;">Muuda</button>` : ''}
+                            
+                            ${isAdmin ? `<button onclick="deletePost('${p.id}')" style="background:var(--danger); font-size:12px; padding:5px 10px;">Kustuta</button>` : ''}
                         </div>
-                    `;
-                }).join('');
-            } catch (e) { container.innerHTML = "Viga laadimisel."; }
-        }
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) { container.innerHTML = "Viga laadimisel."; }
+}
 
         async function vote(postId) {
             if (!pb.authStore.isValid) return alert("Logi sisse!");
@@ -221,6 +228,17 @@
         }
         function logout() { pb.authStore.clear(); location.reload(); }
         window.onload = init;
+
+        async function deletePost(postId) {
+    if (!confirm("Kas oled kindel, et soovid selle postituse kustutada?")) return;
+
+    try {
+        await pb.collection('posts').delete(postId);
+        loadPosts(); // Обновляем список после удаления
+    } catch (e) {
+        alert("Viga kustutamisel: " + e.message);
+    }
+}
     </script>
 </body>
 </html>
