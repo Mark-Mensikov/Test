@@ -1,48 +1,68 @@
-💡 SaaS Tagasiside Portaal (Feedback Board)
-See on täisfunktsionaalne SaaS-rakendus, mis võimaldab kasutajatel esitada tootearenduse ettepanekuid ja nende poolt hääletada. Rakendus on loodud kooliprojekti raames, järgides kaasaegseid veebiarenduse printsiipe.
+Отлично! Чтобы документация соответствовала твоему итоговому коду, в нее нужно добавить информацию о ролях пользователей и админ-панели. Это покажет преподавателю, что проект продуман с точки зрения управления контентом.
+
+Вот обновленный и полный текст для твоего README.md:
+
+💡 SaaS Tagasiside Portaal (Feedback Board) PRO
+See on täisfunktsionaalne SaaS-rakendus, mis võimaldab kasutajatel esitada tootearenduse ettepanekuid, nende poolt hääletada ja hallata platvormi sisu vastavalt rollidele.
 
 🚀 Lingid
 Frontend: http://mbatwwnb4zirf6xd9k8f6dz7.176.112.158.3.sslip.io/
 
 PocketBase Admin: http://pocketbase-hv4bvovfn86uwdafxs7d7p1s.176.112.158.3.sslip.io/_/
 
-🛠 Tehniline arhitektuur
-Projekt koosneb kolmest põhilisest osast:
+🛠 Tehniline stäkk
+Frontend: HTML5, CSS3, JavaScript (PocketBase SDK)
 
-Frontend (UI): HTML5, CSS3 ja JavaScript (PocketBase SDK).
+Backend: PocketBase (Andmebaas, Auth, failihaldus)
 
-Backend (BaaS): PocketBase, mis tegeleb andmebaasi, autentimise ja API-ga.
+Maksemeetod: Stripe (Test Mode) integratsioon
 
-Infrastruktuur: Kõik teenused on juurutatud Coolify platvormil Docker konteineritena.
+Infrastructure: Coolify (Self-hosted Docker konteinerid)
 
-Olulised tehnilised lahendused:
-Persistent Volumes: PocketBase andmed on salvestatud serveri püsikettale, et vältida andmekadu konteineri taaskäivitamisel.
+🔑 Kasutajarollid ja õigused (RBAC)
+Rakenduses on rakendatud dünaamiline rollipõhine juurdepääsu kontroll:
 
-Keskkonnamuutujad (ENV): PocketBase URL ja pordid on seadistatud serveripoolselt, mitte koodi sisse kirjutatud.
+Külaline (Sisselogimata): Saab vaadata postituste nimekirja ja häälte arvu.
 
-📊 Andmemudel (Collections)
-users: Süsteemne tabel kasutajatega. Lisatud väli verified (Boolean) VIP staatuse jaoks.
+Tavakasutaja:
 
-posts: Kasutajate ettepanekud (title, description, votes, status, author).
+Saab luua uusi ettepanekuid.
 
-votes: Seoste tabel, mis tagab, et iga kasutaja saab hääletada ühe postituse poolt vaid üks kord (Unique Index: user + post).
+Saab hääletada teiste postituste poolt (piirang: 1 hääl postituse kohta, enda poolt hääletada ei saa).
 
-🔐 Turvalisus ja API reeglid
-Rakendus järgib "Least Privilege" põhimõtet:
+VIP Kasutaja (verified: true):
 
-Lugemine: Kõik (isegi sisselogimata kasutajad) näevad postitusi.
+Kõik tavakasutaja õigused.
 
-Loomine: Ainult autoriseeritud kasutajad saavad lisada postitusi ja hääletada.
+Õigus muuta (Edit) oma postitusi.
 
-VIP Staatus: Kasutaja verified staatust saab muuta ainult pärast edukat Stripe makset.
+Visuaalne eristus: "VIP" märk ja esiletõstetud kuldne taust postitustel.
 
-💳 Stripe integratsioon (SaaS model)
-Projektis on integreeritud Stripe Test Mode.
+Administraator (is_admin: true):
 
-Kasutaja saab osta VIP staatuse (15€).
+Täielik kontroll platvormi üle.
 
-Pärast makset suunatakse kasutaja tagasi veebilehele parameetriga ?payment=success.
+Õigus muuta ja kustutada (Delete) kõiki postitusi sõltumata autorist.
 
-Süsteem tuvastab eduka makse ja uuendab kasutaja profiili (verified: true).
+💳 Stripe ja VIP-staatuse loogika
+Süsteem kasutab Stripe Payment Linki teenust.
 
-VIP eelised: Kuldsed esiletõstetud postitused, "VIP" märk profiili juures ja reklaamivaba vaade.
+Pärast edukat makset suunatakse kasutaja tagasi portaali parameetriga ?payment=success.
+
+Frontend tuvastab parameetri ja kutsub välja PocketBase API, et uuendada kasutaja profiilis väli verified: true.
+
+See aktiveerib koheselt VIP-funktsionaalsuse ilma käsitsi sekkumiseta.
+
+📦 Andmebaasi struktuur (Collections)
+users: Laiendatud väljadega verified (Boolean) ja is_admin (Boolean).
+
+posts: Pealkiri, kirjeldus, häälte arv, staatus ja seos autoriga.
+
+votes: Seoste tabel, mis kasutab Unique Index (user + post), et vältida topelthääletamist ja tagada andmete terviklikkus.
+
+🛠 Paigaldus ja juurutamine
+Projekt on juurutatud Coolify platvormile, kasutades Dockerit.
+
+PocketBase on seadistatud kasutama Persistent Volume'i, mis tagab andmete säilimise serveri taaskäivitamisel.
+
+API päringud on kaitstud PocketBase API Rules (Server-side validation) abil.
