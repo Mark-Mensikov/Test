@@ -66,28 +66,33 @@
     <script>
         let pb;
 
-        if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
-    try {
-        // Используем кастомное поле 'is_pro' вместо системного 'verified'
-        await pb.collection('users').update(pb.authStore.model.id, { 
-            "is_pro": true 
-        });
-        
-        // Обновляем данные сессии
-        await pb.collection('users').authRefresh();
+        async function init() {
+            try {
+                const config = await fetch('/config').then(res => res.json());
+                pb = new PocketBase(config.pbUrl);
 
-        window.history.replaceState({}, document.title, "/");
-        alert("Makse õnnestus! Oled nüüd VIP kasutaja.");
-        location.reload(); 
-    } catch (err) {
-        console.error("DEBUG: Full error response:", err.response); // Посмотри это в консоли!
-        alert("Viga: " + err.message);
-    }
-    return;
-}
+                // --- STRIPE MAKSESÜSTEEMI KONTROLL ---
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
+                    try {
+                        // Uuendame kasutaja staatust. Kui 'verified' ei tööta, kasuta 'is_pro'
+                        await pb.collection('users').update(pb.authStore.model.id, { "verified": true });
+                        await pb.collection('users').authRefresh();
+                        window.history.replaceState({}, document.title, "/");
+                        alert("Makse õnnestus! Oled nüüd VIP kasutaja.");
+                        location.reload(); 
+                        return;
+                    } catch (err) {
+                        console.error("Viga VIP staatuse määramisel:", err);
+                    }
+                }
+                // --- KONTROLLI LÕPP ---
+
                 renderUI();
                 loadPosts();
-            } catch (e) { console.error("Init viga:", e); }
+            } catch (e) { 
+                console.error("Init viga:", e); 
+            }
         }
 
         function renderUI() {
@@ -97,9 +102,10 @@
             const authForms = document.getElementById('auth-forms');
 
             if (pb.authStore.isValid) {
-                const isVip = pb.authStore.model.verified;
+                const user = pb.authStore.model;
+                const isVip = user.verified; 
                 authSection.innerHTML = `
-                    <span>${pb.authStore.model.email} ${isVip ? '<span class="vip-badge">VIP</span>' : ''}</span>
+                    <span>${user.email} ${isVip ? '<span class="vip-badge">VIP</span>' : ''}</span>
                     <button onclick="logout()" style="background:var(--danger); margin-left:10px;">Välju</button>
                 `;
                 postForm.style.display = 'block';
@@ -130,87 +136,58 @@
                 await pb.collection('users').create({ email, password, passwordConfirm, verified: false });
                 await pb.collection('users').authWithPassword(email, password);
                 location.reload();
-            } catch (e) { alert("Registreerimine ebaõnnestus: " + e.message); }
+            } catch (e) { alert("Registreerimine ebaõnnestus!"); }
         }
 
         async function loadPosts() {
-    const container = document.getElementById('posts-list');
-    try {
-        // Подгружаем посты и расширяем данные об авторе
-        const posts = await pb.collection('posts').getFullList({ sort: '-votes', expand: 'author' });
-        
-        // Получаем актуальные данные пользователя напрямую из authStore
-        const user = pb.authStore.model;
-        const isAdmin = user?.is_admin === true;
+            const container = document.getElementById('posts-list');
+            try {
+                const posts = await pb.collection('posts').getFullList({ sort: '-votes', expand: 'author' });
+                const user = pb.authStore.model;
+                const isAdmin = user?.is_admin === true;
 
-        container.innerHTML = posts.map(p => {
-            const authorIsVip = p.expand?.author?.verified;
-            
-            // Права на редактирование: автор-VIP или любой Админ
-            const canEdit = pb.authStore.isValid && ((user.id === p.author && user.verified) || isAdmin);
-            
-            // Права на удаление: ТОЛЬКО Админ
-            const canDelete = pb.authStore.isValid && isAdmin;
+                container.innerHTML = posts.map(p => {
+                    const authorIsVip = p.expand?.author?.verified;
+                    const canEdit = pb.authStore.isValid && ((user?.id === p.author && user?.verified) || isAdmin);
+                    const canDelete = pb.authStore.isValid && isAdmin;
 
-            return `
-                <div class="card post ${authorIsVip ? 'is-vip' : ''}">
-                    <div class="vote-section">
-                        <button onclick="vote('${p.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>▲</button>
-                        <span class="vote-count">${p.votes || 0}</span>
-                    </div>
-                    <div style="flex:1">
-                        <span class="status-badge">${p.status}</span>
-                        ${authorIsVip ? '<span class="vip-badge">VIP AUTOR</span>' : ''}
-                        
-                        <h3 id="title-${p.id}" style="margin: 8px 0 4px 0">${p.title}</h3>
-                        <p id="desc-${p.id}" style="margin:0; color:#666; font-size:14px;">${p.description || ''}</p>
-                        
-                        <div style="margin-top: 10px; display: flex; gap: 10px;">
-                            ${canEdit ? `<button onclick="startEdit('${p.id}')" style="background:#6c757d; font-size:12px; padding:5px 10px;">Muuda</button>` : ''}
-                            ${canDelete ? `<button onclick="deletePost('${p.id}')" style="background:var(--danger); font-size:12px; padding:5px 10px;">Kustuta</button>` : ''}
+                    return `
+                        <div class="card post ${authorIsVip ? 'is-vip' : ''}">
+                            <div class="vote-section">
+                                <button onclick="vote('${p.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>▲</button>
+                                <span class="vote-count">${p.votes || 0}</span>
+                            </div>
+                            <div style="flex:1">
+                                <span class="status-badge">${p.status}</span>
+                                ${authorIsVip ? '<span class="vip-badge">VIP AUTOR</span>' : ''}
+                                <h3 id="title-${p.id}" style="margin: 8px 0 4px 0">${p.title}</h3>
+                                <p id="desc-${p.id}" style="margin:0; color:#666; font-size:14px;">${p.description || ''}</p>
+                                <div style="margin-top: 10px; display: flex; gap: 10px;">
+                                    ${canEdit ? `<button onclick="startEdit('${p.id}')" style="background:#6c757d; font-size:12px; padding:5px 10px;">Muuda</button>` : ''}
+                                    ${canDelete ? `<button onclick="deletePost('${p.id}')" style="background:var(--danger); font-size:12px; padding:5px 10px;">Kustuta</button>` : ''}
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    } catch (e) { 
-        console.error(e);
-        container.innerHTML = "Viga laadimisel."; 
-    }
-}
+                    `;
+                }).join('');
+            } catch (e) { container.innerHTML = "Viga laadimisel."; }
+        }
 
         async function vote(postId) {
-            if (!pb.authStore.isValid) return alert("Logi sisse!");
-
+            if (!pb.authStore.isValid) return;
             try {
                 const post = await pb.collection('posts').getOne(postId);
+                if (post.author === pb.authStore.model.id) return alert("Oma postituse poolt ei saa hääletada!");
                 
-                // Проверка: нельзя голосовать за свой пост
-                if (post.author === pb.authStore.model.id) {
-                    return alert("Oma postituse poolt ei saa hääletada!");
-                }
-
-                // Пытаемся создать запись о голосе
-                await pb.collection('votes').create({ 
-                    user: pb.authStore.model.id, 
-                    post: postId 
-                });
-
-                // Если запись создана успешно (Unique Index не сработал), обновляем счетчик
-                await pb.collection('posts').update(postId, { 
-                    "votes+": 1 
-                });
-
+                await pb.collection('votes').create({ user: pb.authStore.model.id, post: postId });
+                await pb.collection('posts').update(postId, { "votes+": 1 });
                 loadPosts();
-            } catch (e) {
-                // Если ошибка 400 или 404, скорее всего голос уже есть
-                alert("Sa oled juba hääletanud selle poolt!");
-            }
+            } catch (e) { alert("Sa oled juba hääletanud!"); }
         }
 
         async function createNewPost() {
             const title = document.getElementById('post-title').value;
-            if(!title) return alert("Pealkiri on puudu!");
+            if(!title) return alert("Pealkiri puudu!");
             try {
                 await pb.collection('posts').create({
                     title: title,
@@ -226,13 +203,20 @@
             const descEl = document.getElementById(`desc-${postId}`);
             const newTitle = prompt("Uus pealkiri:", titleEl.innerText);
             const newDesc = prompt("Uus kirjeldus:", descEl.innerText);
-            
-            if (newTitle !== null && newTitle !== "") {
+            if (newTitle) {
                 try {
                     await pb.collection('posts').update(postId, { title: newTitle, description: newDesc });
                     loadPosts();
-                } catch (e) { alert("Viga muutmises: " + e.message); }
+                } catch (e) { alert("Viga!"); }
             }
+        }
+
+        async function deletePost(postId) {
+            if (!confirm("Kustutada?")) return;
+            try {
+                await pb.collection('posts').delete(postId);
+                loadPosts();
+            } catch (e) { alert("Viga!"); }
         }
 
         function toggleAuth(showReg) {
@@ -240,18 +224,8 @@
             document.getElementById('register-view').style.display = showReg ? 'block' : 'none';
         }
         function logout() { pb.authStore.clear(); location.reload(); }
+        
         window.onload = init;
-
-        async function deletePost(postId) {
-    if (!confirm("Kas oled kindel, et soovid selle postituse kustutada?")) return;
-
-    try {
-        await pb.collection('posts').delete(postId);
-        loadPosts(); // Обновляем список после удаления
-    } catch (e) {
-        alert("Viga kustutamisel: " + e.message);
-    }
-}
     </script>
 </body>
 </html>
