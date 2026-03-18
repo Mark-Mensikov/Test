@@ -3,7 +3,9 @@ const path = require('path');
 
 const app = express();
 
-const PORT = process.env.PORT || 3000;
+// Было: const PORT = process.env.PORT || 3000;
+// Стало:
+const PORT = parseInt(process.env.PORT, 10) || 3000;
 
 // Раздаём статические файлы (index.html)
 app.use(express.static(__dirname));
