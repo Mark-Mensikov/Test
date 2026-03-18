@@ -1,125 +1,48 @@
-# SaaS tellimuse demo projekt
+💡 SaaS Tagasiside Portaal (Feedback Board)
+See on täisfunktsionaalne SaaS-rakendus, mis võimaldab kasutajatel esitada tootearenduse ettepanekuid ja nende poolt hääletada. Rakendus on loodud kooliprojekti raames, järgides kaasaegseid veebiarenduse printsiipe.
 
-## Ülevaade
+🚀 Lingid
+Frontend: http://mbatwwnb4zirf6xd9k8f6dz7.176.112.158.3.sslip.io/
 
-See projekt demonstreerib kaasaegset SaaS-arhitektuuri, kus autentimine ja maksed on delegeeritud välistele pilveteenustele.
+PocketBase Admin: http://pocketbase-hv4bvovfn86uwdafxs7d7p1s.176.112.158.3.sslip.io/_/
 
-Projekti eesmärk oli realiseerida:
+🛠 Tehniline arhitektuur
+Projekt koosneb kolmest põhilisest osast:
 
-* Autentimine (Clerk hosted login)
-* Korduvmakse (Stripe Payment Link)
-* Backend teenus Renderi platvormil
-* Automaatne suunamine pärast edukat makset
+Frontend (UI): HTML5, CSS3 ja JavaScript (PocketBase SDK).
 
-Lahendus järgib 12-Factor App metoodika Backing Services põhimõtet, kus väliseid teenuseid käsitletakse võrgu kaudu tarbitavate komponentidena.
+Backend (BaaS): PocketBase, mis tegeleb andmebaasi, autentimise ja API-ga.
 
----
+Infrastruktuur: Kõik teenused on juurutatud Coolify platvormil Docker konteineritena.
 
-## Arhitektuur
+Olulised tehnilised lahendused:
+Persistent Volumes: PocketBase andmed on salvestatud serveri püsikettale, et vältida andmekadu konteineri taaskäivitamisel.
 
-HTML esileht koos maksenupuga
-↓
-Stripe hosted checkout
-↓
-Automaatne suunamine pärast makset
-↓
-Backend API Renderis
+Keskkonnamuutujad (ENV): PocketBase URL ja pordid on seadistatud serveripoolselt, mitte koodi sisse kirjutatud.
 
-Autentimine toimub eraldi Clerk hosted login lehe kaudu.
+📊 Andmemudel (Collections)
+users: Süsteemne tabel kasutajatega. Lisatud väli verified (Boolean) VIP staatuse jaoks.
 
----
+posts: Kasutajate ettepanekud (title, description, votes, status, author).
 
-## Autentimine
+votes: Seoste tabel, mis tagab, et iga kasutaja saab hääletada ühe postituse poolt vaid üks kord (Unique Index: user + post).
 
-Autentimine on teostatud Clerki Hosted Login Page abil.
+🔐 Turvalisus ja API reeglid
+Rakendus järgib "Least Privilege" põhimõtet:
 
-Lubatud meetodid:
+Lugemine: Kõik (isegi sisselogimata kasutajad) näevad postitusi.
 
-* Email + parool
-* Google OAuth
+Loomine: Ainult autoriseeritud kasutajad saavad lisada postitusi ja hääletada.
 
-Seadistatud on meeskonna nimi ja bränding.
+VIP Staatus: Kasutaja verified staatust saab muuta ainult pärast edukat Stripe makset.
 
-Clerk haldab:
+💳 Stripe integratsioon (SaaS model)
+Projektis on integreeritud Stripe Test Mode.
 
-* Paroolide räsi
-* Sessioonihaldust
-* OAuth integratsiooni
-* Turvalist sisselogimisvoogu
+Kasutaja saab osta VIP staatuse (15€).
 
-Backend ei salvesta paroole ega tundlikke autentimisandmeid.
+Pärast makset suunatakse kasutaja tagasi veebilehele parameetriga ?payment=success.
 
----
+Süsteem tuvastab eduka makse ja uuendab kasutaja profiili (verified: true).
 
-## Maksed
-
-Maksed on realiseeritud Stripe Payment Links funktsionaalsusega testrežiimis.
-
-Loodud toode:
-
-* Nimi: Meie SaaS-i PRO-tellimus
-* Hind: 15 € kuus
-* Tüüp: korduvmakse (subscription)
-
-Stripe haldab:
-
-* Kaardimaksete töötlemist
-* PCI DSS vastavust
-* Hosted maksevormi
-* Maksekinnitust
-* Suunamist pärast edukat makset
-
-Testimiseks kasutati Stripe testkaarte.
-
----
-
-## Backend (Render)
-
-Backend on loodud Node.js ja Express abil.
-
-Rakenduse endpointid:
-
-GET /health
-Tagastab teenuse staatuse ja uptime väärtuse.
-
-GET /
-Tagastab HTML lehe, mis sisaldab Stripe maksenupu linki.
-
-Keskkonnamuutujad:
-
-* Rakendus kasutab process.env.PORT muutujat, mis tagab ühilduvuse Renderi platvormiga.
-
-Pärast edukat makset suunab Stripe kasutaja automaatselt Renderis jooksvale teenusele.
-
----
-
-## Demonstreeritud põhimõtted
-
-* 12-Factor App – Backing Services
-* SaaS ja PaaS integratsioon
-* Security by Design
-* Privacy by Design
-* Vastutuse delegeerimine spetsialiseeritud teenustele
-* Turvaline maksete ja autentimise arhitektuur
-
----
-
-## Kasutatud tehnoloogiad
-
-* Node.js
-* Express
-* Stripe (Payment Links, Test Mode)
-* Clerk (Authentication)
-* Render (Cloud hosting)
-
----
-
-## Tulemus
-
-* Töötab hosted autentimisleht
-* Loodud korduvmaksega toode
-* Genereeritud ja testitud makselink
-* Automaatne suunamine pärast edukat makset
-* Avalikult kättesaadav backend teenus Renderis
-
-Projekt demonstreerib minimaalset, kuid realistlikku SaaS makse- ja autentimisarhitektuuri, kus tundlikud andmed on delegeeritud professionaalsetele välisteenustele.
+VIP eelised: Kuldsed esiletõstetud postitused, "VIP" märk profiili juures ja reklaamivaba vaade.
