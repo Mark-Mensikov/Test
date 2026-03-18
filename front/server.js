@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 const app = express();
-
+app.use('/front', express.static(path.join(__dirname, 'front')));
 // Võtame pordi keskkonnast, aga kui seal on vigane tekst, kasutame 3000
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 
