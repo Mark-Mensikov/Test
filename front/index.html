@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tagasiside Portaal</title>
+    <title>Feedback Board PRO</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pocketbase/0.21.1/pocketbase.umd.js"></script>
     <style>
         :root { --primary: #007bff; --success: #28a745; --danger: #dc3545; --bg: #f4f7f6; --vip: #ffd700; --admin: #ff4757; }
@@ -11,67 +11,52 @@
         .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
         .auth-box { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         
-        /* Badges */
         .vip-badge { background: var(--vip); color: #333; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 5px; }
         .admin-badge { background: var(--admin); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 5px; }
         
-        /* Post Styles */
         .post { display: flex; gap: 20px; border-left: 5px solid var(--primary); transition: 0.3s; }
         .post.is-vip { border-left-color: var(--vip); background: #fffdf0; }
         .post.is-admin-post { border-left-color: var(--admin); background: #fff5f5; border-left-width: 10px; }
-        .post.is-rejected { opacity: 0.6; filter: grayscale(0.8); border-left-color: #666; }
+        
+        /* Стиль для скрытых (модерируемых) постов, которые видит только автор или админ */
+        .post.is-moderating { border-left-style: dashed; background: #fafafa; border-left-color: #ccc; }
+        .post.is-rejected { opacity: 0.5; filter: grayscale(1); }
 
         .vote-section { text-align: center; min-width: 60px; }
         .vote-count { display: block; font-size: 24px; font-weight: bold; margin: 5px 0; }
         
-        /* Status Badges */
-        .status-badge { font-size: 11px; padding: 3px 10px; border-radius: 12px; background: #eee; text-transform: uppercase; color: #666; font-weight: bold; }
+        .status-badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: #eee; text-transform: uppercase; font-weight: bold; }
         .status-completed { background: #d4edda; color: #155724; }
-        
-        .author-info { font-size: 12px; color: #888; font-weight: bold; }
-        
+        .status-review { background: #fff3cd; color: #856404; }
+
         input, textarea, select { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
-        button { cursor: pointer; padding: 10px 20px; border: none; border-radius: 6px; background: var(--primary); color: white; font-weight: bold; transition: 0.2s; }
-        button:hover { opacity: 0.8; }
-        .admin-controls { margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ddd; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        button { cursor: pointer; padding: 10px 20px; border: none; border-radius: 6px; background: var(--primary); color: white; font-weight: bold; }
+        .admin-controls { margin-top: 10px; display: flex; gap: 5px; align-items: center; border-top: 1px solid #eee; padding-top: 10px; }
     </style>
 </head>
 <body>
 
     <div class="auth-box">
-        <h2>💡 Feedback System</h2>
+        <h2>💡 Ettepanekud</h2>
         <div id="auth-section">Laadin...</div>
     </div>
 
     <div id="auth-forms" class="card" style="display: none;">
-        <div id="login-view">
-            <input type="email" id="login-email" placeholder="E-mail">
-            <input type="password" id="login-pass" placeholder="Parool">
-            <button onclick="handleLogin()">Logi sisse</button>
-            <p><small onclick="toggleAuth(true)" style="cursor:pointer; color:var(--primary)">Loo uus konto</small></p>
-        </div>
-        <div id="register-view" style="display: none;">
-            <input type="email" id="reg-email" placeholder="E-mail">
-            <input type="password" id="reg-pass" placeholder="Parool">
-            <button onclick="handleRegister()" style="background: var(--success)">Registreeri</button>
-            <p><small onclick="toggleAuth(false)" style="cursor:pointer; color:var(--primary)">Tagasi</small></p>
-        </div>
-    </div>
-
-    <div id="vip-promo" class="card" style="display: none; background: #fff9c4; border: 1px solid #ffe082;">
-        <strong>Saa VIP-ks!</strong> Sinu postitused on alati esiletõstetud.
-        <br><br>
-        <a href="https://buy.stripe.com/test_aFacN53uE0TNgqoeEHe7m02"><button style="background:var(--vip); color:black">Osta 15€</button></a>
+        <input type="email" id="login-email" placeholder="E-mail">
+        <input type="password" id="login-pass" placeholder="Parool">
+        <button onclick="handleLogin()">Logi sisse</button>
+        <p><small onclick="toggleAuth(true)" style="cursor:pointer; color:var(--primary)">Loo konto</small></p>
     </div>
 
     <div id="new-post-form" class="card" style="display: none;">
-        <h3>Uus ettepanek</h3>
+        <h3>Uus idee</h3>
         <input type="text" id="post-title" placeholder="Pealkiri">
         <textarea id="post-desc" rows="2" placeholder="Kirjeldus..."></textarea>
-        <button onclick="createNewPost()">Postita</button>
+        <button onclick="createNewPost()">Saada ülevaatusele</button>
+        <p style="font-size: 11px; color: #888; margin-top: 5px;">* Postitus ilmub avalikult alles pärast moderaatori kinnitust.</p>
     </div>
 
-    <div id="posts-list">Laadin postitusi...</div>
+    <div id="posts-list">Laadin...</div>
 
     <script>
         let pb;
@@ -93,16 +78,13 @@
                     <div>
                         <strong>${user.email}</strong> 
                         ${user.is_admin ? '<span class="admin-badge">ADMIN</span>' : ''}
-                        ${user.is_pro ? '<span class="vip-badge">VIP</span>' : ''}
-                        <button onclick="logout()" style="background:var(--danger); margin-left:10px; padding:5px 10px; font-size:12px;">Välju</button>
+                        <button onclick="logout()" style="background:var(--danger); padding:4px 8px; font-size:12px; margin-left:10px;">Välju</button>
                     </div>
                 `;
                 document.getElementById('new-post-form').style.display = 'block';
                 document.getElementById('auth-forms').style.display = 'none';
-                document.getElementById('vip-promo').style.display = (user.is_pro || user.is_admin) ? 'none' : 'block';
             } else {
                 authSection.innerHTML = `<button onclick="document.getElementById('auth-forms').style.display='block'">Logi sisse</button>`;
-                document.getElementById('vip-promo').style.display = 'none';
             }
         }
 
@@ -115,28 +97,32 @@
 
                 container.innerHTML = posts.map(p => {
                     const author = p.expand?.author;
-                    const isRejected = p.status === 'rejected';
+                    const isOwner = user?.id === p.author;
                     
-                    if (isRejected && !isAdmin) return '';
+                    // Логика отображения:
+                    // 1. Если статус completed — видят все.
+                    // 2. Если under-review или rejected — видит ТОЛЬКО автор или админ.
+                    if (p.status !== 'completed' && !isOwner && !isAdmin) return '';
 
-                    let postClasses = `card post ${p.status === 'rejected' ? 'is-rejected' : ''}`;
+                    let postClasses = `card post`;
+                    if (p.status === 'under-review') postClasses += ' is-moderating';
+                    if (p.status === 'rejected') postClasses += ' is-rejected';
                     if (author?.is_admin) postClasses += ' is-admin-post';
                     else if (author?.is_pro) postClasses += ' is-vip';
-
-                    const statusClass = p.status === 'completed' ? 'status-completed' : '';
 
                     return `
                         <div class="${postClasses}">
                             <div class="vote-section">
-                                <button onclick="vote('${p.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>▲</button>
+                                <button onclick="vote('${p.id}')" ${!pb.authStore.isValid || p.status !== 'completed' ? 'disabled' : ''}>▲</button>
                                 <span class="vote-count">${p.votes}</span>
                             </div>
                             <div style="flex:1">
-                                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                                    <span class="status-badge ${statusClass}">${p.status}</span>
+                                <div style="display:flex; justify-content:space-between;">
+                                    <span class="status-badge ${p.status === 'completed' ? 'status-completed' : 'status-review'}">
+                                        ${p.status === 'under-review' ? 'Ootel' : p.status}
+                                    </span>
                                     <div style="text-align:right">
-                                        <div class="author-info">${author?.email || 'Anonüümne'}</div>
-                                        ${author?.is_admin ? '<span class="admin-badge">ADMIN</span>' : ''}
+                                        <small>${author?.email || 'Anonüümne'}</small>
                                         ${author?.is_pro ? '<span class="vip-badge">VIP</span>' : ''}
                                     </div>
                                 </div>
@@ -145,15 +131,15 @@
 
                                 ${isAdmin ? `
                                     <div class="admin-controls">
-                                        <select onchange="updateStatus('${p.id}', this.value)" style="width:auto; padding:5px; margin:0; font-size:12px;">
-                                            <option value="under-review" ${p.status === 'under-review' ? 'selected' : ''}>Under Review</option>
-                                            <option value="completed" ${p.status === 'completed' ? 'selected' : ''}>Completed</option>
-                                            <option value="rejected" ${p.status === 'rejected' ? 'selected' : ''}>Rejected (Block)</option>
+                                        <select onchange="updateStatus('${p.id}', this.value)" style="width:auto; padding:2px; font-size:11px;">
+                                            <option value="under-review" ${p.status === 'under-review' ? 'selected' : ''}>Ootel (Private)</option>
+                                            <option value="completed" ${p.status === 'completed' ? 'selected' : ''}>Kinnita (Public)</option>
+                                            <option value="rejected" ${p.status === 'rejected' ? 'selected' : ''}>Reject (Private)</option>
                                         </select>
-                                        <button onclick="toggleVip('${p.author}', ${author?.is_pro})" style="background:var(--vip); color:black; font-size:11px; padding:5px;">Toggle VIP</button>
-                                        <button onclick="deletePost('${p.id}')" style="background:var(--danger); font-size:11px; padding:5px;">Kustuta</button>
+                                        <button onclick="deletePost('${p.id}')" style="background:var(--danger); font-size:10px; padding:3px 6px;">Kustuta</button>
                                     </div>
                                 ` : ''}
+                                ${isOwner && p.status === 'under-review' && !isAdmin ? '<p style="font-size:10px; color:orange;"><i>Seda postitust näed praegu ainult Sina.</i></p>' : ''}
                             </div>
                         </div>
                     `;
@@ -161,63 +147,43 @@
             } catch (e) { container.innerHTML = "Viga laadimisel."; }
         }
 
-        async function updateStatus(postId, newStatus) {
-            try {
-                await pb.collection('posts').update(postId, { "status": newStatus });
-                loadPosts();
-            } catch (e) { alert("Viga!"); }
-        }
-
         async function createNewPost() {
             const title = document.getElementById('post-title').value;
-            if(!title) return alert("Pealkiri on vajalik!");
+            if(!title) return;
             try {
                 await pb.collection('posts').create({
                     title, description: document.getElementById('post-desc').value,
                     votes: 0, status: 'under-review', author: pb.authStore.model.id
                 });
+                alert("Postitus saadetud moderaatorile!");
                 location.reload();
             } catch (e) { alert("Viga!"); }
         }
 
-        async function vote(postId) {
-            try {
-                await pb.collection('votes').create({ user: pb.authStore.model.id, post: postId });
-                await pb.collection('posts').update(postId, { "votes+": 1 });
-                loadPosts();
-            } catch (e) { alert("Sa oled juba hääletanud!"); }
-        }
-
-        async function toggleVip(uid, cur) {
-            await pb.collection('users').update(uid, { is_pro: !cur });
+        async function updateStatus(id, stat) {
+            await pb.collection('posts').update(id, { status: stat });
             loadPosts();
         }
 
+        async function vote(id) {
+            try {
+                await pb.collection('votes').create({ user: pb.authStore.model.id, post: id });
+                await pb.collection('posts').update(id, { "votes+": 1 });
+                loadPosts();
+            } catch (e) { alert("Juba hääletatud!"); }
+        }
+
         async function deletePost(id) {
-            if(confirm("Kustutada see postitus?")) { await pb.collection('posts').delete(id); loadPosts(); }
+            if(confirm("Kustutada?")) { await pb.collection('posts').delete(id); loadPosts(); }
         }
 
         async function handleLogin() {
             try {
                 await pb.collection('users').authWithPassword(document.getElementById('login-email').value, document.getElementById('login-pass').value);
                 location.reload();
-            } catch (e) { alert("Vale e-mail või parool!"); }
+            } catch (e) { alert("Viga!"); }
         }
 
-        async function handleRegister() {
-            const email = document.getElementById('reg-email').value;
-            const pass = document.getElementById('reg-pass').value;
-            try {
-                await pb.collection('users').create({ email, password: pass, passwordConfirm: pass, is_pro: false, is_admin: false });
-                await pb.collection('users').authWithPassword(email, pass);
-                location.reload();
-            } catch (e) { alert("Viga registreerimisel!"); }
-        }
-
-        function toggleAuth(reg) {
-            document.getElementById('login-view').style.display = reg ? 'none' : 'block';
-            document.getElementById('register-view').style.display = reg ? 'block' : 'none';
-        }
         function logout() { pb.authStore.clear(); location.reload(); }
         window.onload = init;
     </script>
