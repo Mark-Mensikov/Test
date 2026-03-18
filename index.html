@@ -1,15 +1,80 @@
 <!DOCTYPE html>
-<html>
+<html lang="et">
 <head>
-  <title>Meie SaaS</title>
+    <meta charset="UTF-8">
+    <title>Meie SaaS</title>
+    <style>
+        .collection-item {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        #data-container {
+            margin-top: 20px;
+        }
+    </style>
 </head>
 <body>
-  <h1>Meie SaaS PRO</h1>
-  <p>Upgrade to PRO – 15€/month</p>
+    <h1>Meie SaaS PRO</h1>
+    <p>Upgrade to PRO – 15€/month</p>
 
-  <a href="https://buy.stripe.com/test_eVq14n9T2gSL2zycwze7m01">
-    <button>Buy PRO</button>
-  </a>
+    <a href="https://buy.stripe.com/test_eVq14n9T2gSL2zycwze7m01">
+        <button>Buy PRO</button>
+    </a>
 
+    <hr>
+
+    <h2>Andmed PocketBase-ist:</h2>
+    <div id="data-container">Laadin andmeid...</div>
+
+    <script>
+        async function loadPocketBaseData() {
+            try {
+                // 1. Получаем URL PocketBase от нашего Node.js сервера
+                const configResponse = await fetch('/config');
+                const config = await configResponse.json();
+                const pbUrl = config.pbUrl;
+
+                // 2. Запрашиваем данные из конкретной коллекции
+                // ЗАМЕНИТЕ 'your_collection_name' на имя вашей коллекции в PocketBase
+                const collectionName = 'diary'; 
+                const pbResponse = await fetch(`${pbUrl}/api/collections/${collectionName}/records`);
+                
+                if (!pbResponse.ok) {
+                    throw new Error('Andmete pärimine ebaõnnestus');
+                }
+
+                const data = await pbResponse.json();
+                const container = document.getElementById('data-container');
+                container.innerHTML = ''; // Очищаем текст "Laadin..."
+
+                // 3. Выводим данные на страницу
+                if (data.items.length === 0) {
+                    container.innerHTML = 'Andmeid ei leitud.';
+                    return;
+                }
+
+                data.items.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'collection-item';
+                    // ЗАМЕНИТЕ 'title' и 'description' на ваши поля из базы
+                    div.innerHTML = `
+                        <strong>${item.title || 'Nimetu'}</strong><br>
+                        ${item.description || item.content || ''}
+                    `;
+                    container.appendChild(div);
+                });
+
+            } catch (error) {
+                console.error('Viga:', error);
+                document.getElementById('data-container').innerHTML = 
+                    '<p style="color:red;">Viga andmete laadimisel. Kontrolli konfigureerimist.</p>';
+            }
+        }
+
+        // Запускаем загрузку при открытии страницы
+        loadPocketBaseData();
+    </script>
 </body>
 </html>
