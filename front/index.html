@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>Meie SaaS PRO</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pocketbase/0.21.1/pocketbase.umd.js"></script>
+    
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; line-height: 1.6; }
         .entry { background: #f9f9f9; border-left: 5px solid #007bff; padding: 15px; margin-bottom: 20px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -11,7 +12,6 @@
         button { background: #28a745; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 5px; font-size: 16px; }
         button:hover { background: #218838; }
     </style>
-    <script src="/front/app.js"></script>
 </head>
 <body>
     <h1>Meie SaaS PRO</h1>
@@ -27,18 +27,23 @@
 
     <script>
         async function loadDiary() {
+            const container = document.getElementById('diary-content');
+            
             try {
-                // 1. Küsime serverilt PocketBase'i aadressi
-                const config = await fetch('/config').then(res => res.json());
+                // 1. Получаем конфиг от нашего Node.js сервера
+                const config = await fetch('/config').then(res => {
+                    if (!res.ok) throw new Error('Config load failed');
+                    return res.json();
+                });
+                
+                // 2. Инициализируем PocketBase
                 const pb = new PocketBase(config.pbUrl);
 
-                // 2. Tõmbame andmed 'diary' kollektsioonist
-                // Sorteerime loomisaja järgi (uuemad eespool)
+                // 3. Загружаем данные из коллекции 'diary'
                 const records = await pb.collection('diary').getFullList({
                     sort: '-created',
                 });
 
-                const container = document.getElementById('diary-content');
                 container.innerHTML = '';
 
                 if (records.length === 0) {
@@ -46,13 +51,10 @@
                     return;
                 }
 
-                // 3. Kuvame andmed ekraanil
+                // 4. Отрисовка
                 records.forEach(record => {
                     const div = document.createElement('div');
                     div.className = 'entry';
-                    
-                    // Kontrolli oma PocketBase'i väljade nimesid! 
-                    // Kui väljade nimed on teised (nt 'pealkiri' või 'sisu'), muuda siin:
                     div.innerHTML = `
                         <h3>${record.title || 'Pealkirjata sissekanne'}</h3>
                         <p>${record.content || record.text || 'Sisu puudub...'}</p>
@@ -62,13 +64,18 @@
                 });
 
             } catch (error) {
-                console.error("Viga PocketBase-iga suhtlemisel:", error);
-                document.getElementById('diary-content').innerHTML = 
-                    '<p style="color:red;">Viga! Veendu, et PocketBase API reeglid on "Public".</p>';
+                console.error("Viga:", error);
+                if (container) {
+                    container.innerHTML = `
+                        <p style="color:red;">Viga andmete laadimisel.</p>
+                        <small>${error.message}</small>
+                    `;
+                }
             }
         }
 
-        loadDiary();
+        // Запуск функции после загрузки страницы
+        window.onload = loadDiary;
     </script>
 </body>
 </html>
