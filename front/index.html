@@ -1,0 +1,86 @@
+<div id="auth-status"></div>
+<div id="posts-container">Laadin andmeid...</div>
+
+<script>
+    let pb;
+
+    async function initApp() {
+        try {
+            const config = await fetch('/config').then(res => res.json());
+            pb = new PocketBase(config.pbUrl);
+
+            // Проверка авторизации
+            updateAuthUI();
+            // Загрузка постов
+            loadPosts();
+        } catch (e) { console.error(e); }
+    }
+
+    function updateAuthUI() {
+        const status = document.getElementById('auth-status');
+        if (pb.authStore.isValid) {
+            status.innerHTML = `Tere, ${pb.authStore.model.email}! <button onclick="logout()">Logi välja</button>`;
+        } else {
+            status.innerHTML = `<button onclick="login()">Logi sisse (Test-User)</button>`;
+        }
+    }
+
+    async function loadPosts() {
+        const container = document.getElementById('posts-container');
+        // Получаем посты, сортируем по количеству голосов
+        const records = await pb.collection('posts').getFullList({
+            sort: '-votes',
+        });
+
+        container.innerHTML = records.map(post => `
+            <div class="entry">
+                <h3>${post.title}</h3>
+                <p>${post.description || ''}</p>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button onclick="vote('${post.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>
+                        ▲ Upvote (${post.votes})
+                    </button>
+                    <span class="badge">${post.status}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function vote(postId) {
+        if (!pb.authStore.isValid) return alert("Logi sisse, et hääletada!");
+
+        try {
+            // 1. Создаем запись в коллекции votes
+            await pb.collection('votes').create({
+                user: pb.authStore.model.id,
+                post: postId
+            });
+
+            // 2. Увеличиваем счетчик в коллекции posts
+            // В идеале это делается через API Rule или серверную функцию, 
+            // но для MVP можно обновить напрямую:
+            const post = await pb.collection('posts').getOne(postId);
+            await pb.collection('posts').update(postId, {
+                votes: (post.votes || 0) + 1
+            });
+
+            loadPosts(); // Обновляем список
+        } catch (err) {
+            alert("Sa oled juba hääletanud selle poolt!");
+        }
+    }
+
+    function logout() {
+        pb.authStore.clear();
+        location.reload();
+    }
+
+    async function login() {
+        // Для теста: создайте пользователя в PocketBase вручную и впишите данные сюда
+        // Или сделайте полноценную форму логина
+        await pb.collection('users').authWithPassword('test@test.ee', '1234567890');
+        location.reload();
+    }
+
+    initApp();
+</script>
