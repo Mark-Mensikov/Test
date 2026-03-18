@@ -73,12 +73,25 @@
 
                 const urlParams = new URLSearchParams(window.location.search);
                 if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
-                    await pb.collection('users').update(pb.authStore.model.id, { verified: true });
-                    window.history.replaceState({}, document.title, "/");
-                    alert("Täname! Oled nüüd VIP kasutaja.");
-                    location.reload(); 
-                    return;
-                }
+    try {
+        // Обновляем толькоverified, не трогая другие поля
+        await pb.collection('users').update(pb.authStore.model.id, {
+            verified: true
+        });
+
+        // ОБЯЗАТЕЛЬНО: обновляем токен, чтобы фронтенд узнал о новом статусе
+        await pb.collection('users').authRefresh();
+
+        window.history.replaceState({}, document.title, "/");
+        alert("Makse õnnestus! Oled nüüd VIP.");
+        location.reload();
+    } catch (err) {
+        // Это выведет в консоль ТОЧНУЮ причину (например, какой валидатор не прошел)
+        console.error("PocketBase Error Details:", err.response);
+        alert("Viga: " + (err.response.message || "Andmebaasi viga 400"));
+    }
+    return;
+}
 
                 renderUI();
                 loadPosts();
