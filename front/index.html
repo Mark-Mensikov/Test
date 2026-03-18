@@ -2,147 +2,156 @@
 <html lang="et">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tagasiside Portaal</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pocketbase/0.21.1/pocketbase.umd.js"></script>
-    
     <style>
-        body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #f4f7f6; }
-        .entry { background: white; padding: 20px; margin-bottom: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .badge { background: #e0e0e0; padding: 4px 8px; border-radius: 4px; font-size: 12px; text-transform: uppercase; }
-        .form-group { background: white; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
-        input, textarea { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
-        button { cursor: pointer; padding: 10px 15px; border: none; border-radius: 4px; background: #007bff; color: white; }
-        button:disabled { background: #ccc; }
-        .vote-btn { background: #28a745; font-weight: bold; }
+        :root { --primary: #007bff; --success: #28a745; --danger: #dc3545; --bg: #f4f7f6; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: var(--bg); color: #333; }
+        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .auth-box { text-align: right; margin-bottom: 20px; }
+        input, textarea { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        button { cursor: pointer; padding: 10px 20px; border: none; border-radius: 6px; background: var(--primary); color: white; transition: 0.2s; font-weight: 600; }
+        button:hover { opacity: 0.9; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .post { display: flex; align-items: flex-start; gap: 20px; }
+        .vote-section { text-align: center; min-width: 60px; }
+        .vote-count { display: block; font-size: 20px; font-weight: bold; margin: 5px 0; }
+        .status-badge { font-size: 11px; padding: 3px 8px; border-radius: 12px; background: #eee; text-transform: uppercase; color: #666; }
+        .nav-link { color: var(--primary); cursor: pointer; text-decoration: underline; font-size: 14px; }
     </style>
 </head>
 <body>
 
-    <div id="auth-status" style="text-align: right; margin-bottom: 20px;"></div>
+    <div class="auth-box" id="auth-section">Laadin...</div>
 
-    <div id="post-form-container" class="form-group" style="display: none;">
+    <div id="auth-forms" class="card" style="display: none;">
+        <div id="login-view">
+            <h3>Logi sisse</h3>
+            <input type="email" id="login-email" placeholder="E-mail">
+            <input type="password" id="login-pass" placeholder="Parool">
+            <button onclick="handleLogin()">Sisene</button>
+            <p>Pole kontot? <span class="nav-link" onclick="toggleAuth(true)">Registreeri siin</span></p>
+        </div>
+        <div id="register-view" style="display: none;">
+            <h3>Loo uus konto</h3>
+            <input type="email" id="reg-email" placeholder="E-mail">
+            <input type="password" id="reg-pass" placeholder="Parool (min 8 märki)">
+            <input type="password" id="reg-pass-confirm" placeholder="Kinnita parool">
+            <button onclick="handleRegister()" style="background: var(--success)">Loo konto</button>
+            <p>On juba konto? <span class="nav-link" onclick="toggleAuth(false)">Logi sisse siin</span></p>
+        </div>
+    </div>
+
+    <div id="new-post-form" class="card" style="display: none;">
         <h3>Lisa uus ettepanek</h3>
-        <input type="text" id="post-title" placeholder="Pealkiri (nt. Lisa tume režiim)">
-        <textarea id="post-desc" placeholder="Kirjeldus..."></textarea>
+        <input type="text" id="post-title" placeholder="Mida saaksime parandada?">
+        <textarea id="post-desc" rows="3" placeholder="Kirjelda oma ideed lähemalt..."></textarea>
         <button onclick="createNewPost()">Saada ettepanek</button>
     </div>
 
     <h2>Kõik ettepanekud</h2>
-    <div id="posts-container">Laadin andmeid...</div>
+    <div id="posts-list">Laadin postitusi...</div>
 
     <script>
         let pb;
 
-        async function initApp() {
-            try {
-                // Ждем загрузки конфига с нашего сервера
-                const config = await fetch('/config').then(res => res.json());
-                
-                // Инициализируем SDK
-                pb = new PocketBase(config.pbUrl);
+        async function init() {
+            const config = await fetch('/config').then(res => res.json());
+            pb = new PocketBase(config.pbUrl);
+            renderUI();
+            loadPosts();
+        }
 
-                updateAuthUI();
-                loadPosts();
-            } catch (e) { 
-                console.error("SDK initialization failed:", e); 
+        function renderUI() {
+            const authSection = document.getElementById('auth-section');
+            const postForm = document.getElementById('new-post-form');
+            const authForms = document.getElementById('auth-forms');
+
+            if (pb.authStore.isValid) {
+                authSection.innerHTML = `👤 ${pb.authStore.model.email} | <button onclick="logout()" style="background:var(--danger)">Välju</button>`;
+                postForm.style.display = 'block';
+                authForms.style.display = 'none';
+            } else {
+                authSection.innerHTML = `<button onclick="document.getElementById('auth-forms').style.display='block'">Logi sisse / Registreeri</button>`;
+                postForm.style.display = 'none';
             }
         }
 
-        function updateAuthUI() {
-            const statusDiv = document.getElementById('auth-status');
-            const formContainer = document.getElementById('post-form-container');
+        function toggleAuth(showReg) {
+            document.getElementById('login-view').style.display = showReg ? 'none' : 'block';
+            document.getElementById('register-view').style.display = showReg ? 'block' : 'none';
+        }
 
-            if (pb.authStore.isValid) {
-                statusDiv.innerHTML = `👤 ${pb.authStore.model.email} | <button onclick="logout()" style="background:#dc3545">Logi välja</button>`;
-                formContainer.style.display = 'block';
-            } else {
-                statusDiv.innerHTML = `<button onclick="login()">Logi sisse (Test-kasutaja)</button>`;
-                formContainer.style.display = 'none';
-            }
+        async function handleLogin() {
+            try {
+                await pb.collection('users').authWithPassword(
+                    document.getElementById('login-email').value,
+                    document.getElementById('login-pass').value
+                );
+                location.reload();
+            } catch (e) { alert("Viga: " + e.message); }
+        }
+
+        async function handleRegister() {
+            const email = document.getElementById('reg-email').value;
+            const pass = document.getElementById('reg-pass').value;
+            const confirm = document.getElementById('reg-password-confirm'); // Исправлено ID
+            
+            try {
+                await pb.collection('users').create({
+                    email, password: pass, passwordConfirm: document.getElementById('reg-pass-confirm').value
+                });
+                await pb.collection('users').authWithPassword(email, pass);
+                location.reload();
+            } catch (e) { alert("Viga: " + e.message); }
         }
 
         async function loadPosts() {
-            const container = document.getElementById('posts-container');
+            const container = document.getElementById('posts-list');
             try {
-                const records = await pb.collection('posts').getFullList({
-                    sort: '-votes',
-                });
-
-                container.innerHTML = records.map(post => `
-                    <div class="entry">
-                        <span class="badge">${post.status || 'new'}</span>
-                        <h3>${post.title}</h3>
-                        <p>${post.description || ''}</p>
-                        <button class="vote-btn" onclick="vote('${post.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>
-                            ▲ Upvote (${post.votes || 0})
-                        </button>
+                const posts = await pb.collection('posts').getFullList({ sort: '-votes' });
+                container.innerHTML = posts.map(p => `
+                    <div class="card post">
+                        <div class="vote-section">
+                            <button onclick="vote('${p.id}')" ${!pb.authStore.isValid ? 'disabled' : ''} style="background:#eee; color:#333; width:100%">▲</button>
+                            <span class="vote-count">${p.votes || 0}</span>
+                        </div>
+                        <div style="flex:1">
+                            <span class="status-badge">${p.status || 'uudis'}</span>
+                            <h3 style="margin: 10px 0 5px 0">${p.title}</h3>
+                            <p style="color:#666; margin:0">${p.description || ''}</p>
+                        </div>
                     </div>
                 `).join('');
-            } catch (err) {
-                container.innerHTML = "Andmete laadimine ebaõnnestus.";
-            }
+            } catch (e) { container.innerHTML = "Viga laadimisel."; }
         }
 
         async function createNewPost() {
-            const title = document.getElementById('post-title').value;
-            const description = document.getElementById('post-desc').value;
-
-            if (!title) return alert("Pealkiri on kohustuslik!");
-
             try {
                 await pb.collection('posts').create({
-                    title: title,
-                    description: description,
+                    title: document.getElementById('post-title').value,
+                    description: document.getElementById('post-desc').value,
                     votes: 0,
                     status: 'under-review',
                     author: pb.authStore.model.id
                 });
-                
-                document.getElementById('post-title').value = '';
-                document.getElementById('post-desc').value = '';
-                loadPosts();
-            } catch (err) {
-                alert("Viga postituse loomisel: " + err.message);
-            }
+                location.reload();
+            } catch (e) { alert(e.message); }
         }
 
         async function vote(postId) {
             try {
-                // Создаем запись о голосе
-                await pb.collection('votes').create({
-                    user: pb.authStore.model.id,
-                    post: postId
-                });
-
-                // Получаем текущий пост и обновляем счетчик
+                await pb.collection('votes').create({ user: pb.authStore.model.id, post: postId });
                 const post = await pb.collection('posts').getOne(postId);
-                await pb.collection('posts').update(postId, {
-                    votes: (post.votes || 0) + 1
-                });
-
+                await pb.collection('posts').update(postId, { votes: (post.votes || 0) + 1 });
                 loadPosts();
-            } catch (err) {
-                alert("Sa oled juba hääletanud selle poolt või tekkis viga.");
-            }
+            } catch (e) { alert("Sa oled juba hääletanud!"); }
         }
 
-        function logout() {
-            pb.authStore.clear();
-            location.reload();
-        }
+        function logout() { pb.authStore.clear(); location.reload(); }
 
-        async function login() {
-            try {
-                // ЗАМЕНИТЕ на реальные данные вашего тестового юзера из PocketBase
-                await pb.collection('users').authWithPassword('test@test.ee', '1234567890');
-                location.reload();
-            } catch (err) {
-                alert("Logimine ebaõnnestus. Kontrolli kasutajat PocketBase-is.");
-            }
-        }
-
-        // Запуск после полной загрузки окна
-        window.onload = initApp;
+        window.onload = init;
     </script>
 </body>
 </html>
