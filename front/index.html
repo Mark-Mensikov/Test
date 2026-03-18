@@ -14,19 +14,23 @@
         button { cursor: pointer; padding: 10px 20px; border: none; border-radius: 6px; background: var(--primary); color: white; font-weight: bold; transition: 0.2s; }
         button:hover { opacity: 0.8; }
         
-        /* Статусы авторов */
-        .vip-badge { background: var(--vip); color: #333; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #b8860b; margin-left: 5px; }
-        .admin-badge { background: var(--admin); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 5px; }
+        /* Статусы */
+        .vip-badge { background: var(--vip); color: #333; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #b8860b; margin-left: 5px; display: inline-block; }
+        .admin-badge { background: var(--admin); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 5px; display: inline-block; }
         
-        /* Стили карточек */
-        .post { display: flex; gap: 20px; border-left: 5px solid var(--primary); transition: 0.3s; }
+        /* Стили карточек постов */
+        .post { display: flex; gap: 20px; border-left: 5px solid var(--primary); transition: 0.3s; position: relative; }
+        
+        /* Если пост от VIP */
         .post.is-vip { border-left-color: var(--vip); background: #fffdf0; }
-        .post.is-admin-post { border-left-color: var(--admin); background: #fff5f5; border-left-width: 8px; }
+        
+        /* Если пост от АДМИНА (Видно всем!) */
+        .post.is-admin-post { border-left-color: var(--admin); background: #fff5f5; border-left-width: 10px; }
 
         .vote-section { text-align: center; min-width: 60px; }
         .vote-count { display: block; font-size: 24px; font-weight: bold; margin: 5px 0; }
         .status-badge { font-size: 11px; padding: 3px 10px; border-radius: 12px; background: #eee; text-transform: uppercase; color: #666; font-weight: bold; }
-        .author-info { font-size: 12px; color: #888; }
+        .author-info { font-size: 12px; color: #888; margin-bottom: 2px; }
         .nav-link { color: var(--primary); cursor: pointer; text-decoration: underline; font-size: 14px; }
     </style>
 </head>
@@ -43,30 +47,27 @@
             <input type="email" id="login-email" placeholder="E-mail">
             <input type="password" id="login-pass" placeholder="Parool">
             <button onclick="handleLogin()">Sisene</button>
-            <p>Pole kontot? <span class="nav-link" onclick="toggleAuth(true)">Registreeri siin</span></p>
+            <p>Pole kontot? <span class="nav-link" onclick="toggleAuth(true)">Registreeri</span></p>
         </div>
         <div id="register-view" style="display: none;">
-            <h3>Loo uus konto</h3>
-            <input type="email" id="reg-email" placeholder="E-mail">
-            <input type="password" id="reg-pass" placeholder="Parool">
-            <input type="password" id="reg-pass-confirm" placeholder="Kinnita parool">
+            <h3>Loo konto</h3>
+            <input type="email" id="reg-email">
+            <input type="password" id="reg-pass">
             <button onclick="handleRegister()" style="background: var(--success)">Loo konto</button>
-            <p>On juba konto? <span class="nav-link" onclick="toggleAuth(false)">Logi sisse siin</span></p>
+            <p>On konto? <span class="nav-link" onclick="toggleAuth(false)">Logi sisse</span></p>
         </div>
     </div>
 
-    <div id="vip-promo" class="card" style="display: none; background: linear-gradient(135deg, #fff9c4 0%, #ffffff 100%); border: 1px solid #ffe082;">
-        <strong>Toeta meid ja saa VIP staatus!</strong>
-        <br>
-        <a href="https://buy.stripe.com/test_aFacN53uE0TNgqoeEHe7m02">
-            <button style="background: var(--vip); color: #000; margin-top: 10px;">Osta VIP staatus</button>
-        </a>
+    <div id="vip-promo" class="card" style="display: none; background: linear-gradient(135deg, #fff9c4 0%, #ffffff 100%);">
+        <strong>Saa VIP staatus!</strong> Toeta meid и Sinu postitused tõstetakse esile.
+        <br><br>
+        <a href="https://buy.stripe.com/test_aFacN53uE0TNgqoeEHe7m02"><button style="background:var(--vip); color:black">Osta VIP</button></a>
     </div>
 
     <div id="new-post-form" class="card" style="display: none;">
         <h3>Lisa uus ettepanek</h3>
         <input type="text" id="post-title" placeholder="Pealkiri">
-        <textarea id="post-desc" rows="3" placeholder="Kirjeldus..."></textarea>
+        <textarea id="post-desc" rows="3" placeholder="Kirjeldus"></textarea>
         <button onclick="createNewPost()">Saada</button>
     </div>
 
@@ -80,14 +81,13 @@
                 const config = await fetch('/config').then(res => res.json());
                 pb = new PocketBase(config.pbUrl);
 
-                // Обработка возврата со Stripe
+                // Stripe return
                 const urlParams = new URLSearchParams(window.location.search);
                 if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
                     await pb.collection('users').update(pb.authStore.model.id, { "is_pro": true });
                     await pb.collection('users').authRefresh();
                     window.history.replaceState({}, document.title, "/");
-                    location.reload(); 
-                    return;
+                    location.reload(); return;
                 }
 
                 renderUI();
@@ -98,48 +98,37 @@
         function renderUI() {
             const authSection = document.getElementById('auth-section');
             const vipPromo = document.getElementById('vip-promo');
-            const postForm = document.getElementById('new-post-form');
             const user = pb.authStore.model;
 
             if (pb.authStore.isValid) {
                 authSection.innerHTML = `
-                    <div>
-                        <strong>${user.email}</strong>
-                        ${user.is_pro ? '<span class="vip-badge">VIP</span>' : ''}
-                        ${user.is_admin ? '<span class="admin-badge">ADMIN</span>' : ''}
-                        <button onclick="logout()" style="background:var(--danger); margin-left:10px; padding: 5px 10px;">Välju</button>
-                    </div>
+                    <span>${user.email} ${user.is_pro ? '<span class="vip-badge">VIP</span>' : ''} ${user.is_admin ? '<span class="admin-badge">ADMIN</span>' : ''}</span>
+                    <button onclick="logout()" style="background:var(--danger); margin-left:10px; padding:5px 10px;">Välju</button>
                 `;
-                postForm.style.display = 'block';
+                document.getElementById('new-post-form').style.display = 'block';
                 document.getElementById('auth-forms').style.display = 'none';
                 vipPromo.style.display = (user.is_pro || user.is_admin) ? 'none' : 'block';
             } else {
                 authSection.innerHTML = `<button onclick="document.getElementById('auth-forms').style.display='block'">Logi sisse</button>`;
-                vipPromo.style.display = 'block'; // Гости видят баннер
+                vipPromo.style.display = 'block';
             }
         }
 
         async function loadPosts() {
             const container = document.getElementById('posts-list');
             try {
-                const posts = await pb.collection('posts').getFullList({ 
-                    sort: '-votes', 
-                    expand: 'author',
-                    $autoCancel: false 
-                });
-                
+                const posts = await pb.collection('posts').getFullList({ sort: '-votes', expand: 'author' });
                 const currentUser = pb.authStore.model;
-                const currentIsAdmin = currentUser?.is_admin === true;
 
                 container.innerHTML = posts.map(p => {
                     const author = p.expand?.author;
                     const authorIsVip = author?.is_pro === true;
-                    const authorIsAdmin = author?.is_admin === true;
+                    const authorIsAdmin = author?.is_admin === true; // Проверка статуса автора
                     
-                    const canEdit = pb.authStore.isValid && ((currentUser?.id === p.author && currentUser?.is_pro) || currentIsAdmin);
-                    const canDelete = pb.authStore.isValid && currentIsAdmin;
+                    const isAdmin = currentUser?.is_admin === true;
+                    const canEdit = pb.authStore.isValid && ((currentUser?.id === p.author && currentUser?.is_pro) || isAdmin);
 
-                    // Классы карточки
+                    // Логика классов для карточки
                     let postClasses = 'card post';
                     if (authorIsAdmin) postClasses += ' is-admin-post';
                     else if (authorIsVip) postClasses += ' is-vip';
@@ -151,11 +140,12 @@
                                 <span class="vote-count">${p.votes || 0}</span>
                             </div>
                             <div style="flex:1">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                                <div style="display: flex; justify-content: space-between;">
                                     <span class="status-badge">${p.status}</span>
                                     <div style="text-align: right">
                                         <div class="author-info">${author?.email || 'Anonüümne'}</div>
-                                        ${authorIsAdmin ? '<span class="admin-badge">ADMIN</span>' : (authorIsVip ? '<span class="vip-badge">VIP</span>' : '')}
+                                        ${authorIsAdmin ? '<span class="admin-badge">ADMIN</span>' : ''}
+                                        ${authorIsVip ? '<span class="vip-badge">VIP</span>' : ''}
                                     </div>
                                 </div>
                                 
@@ -163,13 +153,12 @@
                                 <p id="desc-${p.id}" style="margin:0; color:#666; font-size:14px;">${p.description || ''}</p>
                                 
                                 <div style="margin-top: 15px; display: flex; gap: 8px;">
-                                    ${canEdit ? `<button onclick="startEdit('${p.id}')" style="background:#6c757d; font-size:11px; padding:5px 10px;">Muuda</button>` : ''}
-                                    ${canDelete ? `<button onclick="deletePost('${p.id}')" style="background:var(--danger); font-size:11px; padding:5px 10px;">Kustuta</button>` : ''}
-                                    
-                                    ${currentIsAdmin ? `
+                                    ${canEdit ? `<button onclick="startEdit('${p.id}')" style="background:#6c757d; font-size:11px; padding:4px 8px;">Muuda</button>` : ''}
+                                    ${isAdmin ? `<button onclick="deletePost('${p.id}')" style="background:var(--danger); font-size:11px; padding:4px 8px;">Kustuta</button>` : ''}
+                                    ${isAdmin ? `
                                         <button onclick="toggleVip('${p.author}', ${authorIsVip})" 
-                                                style="background: ${authorIsVip ? '#6c757d' : 'var(--vip)'}; color: ${authorIsVip ? 'white' : 'black'}; font-size:11px; padding:5px 10px;">
-                                            ${authorIsVip ? 'Võta VIP ära' : 'Anna VIP'}
+                                                style="background: ${authorIsVip ? '#6c757d' : 'var(--vip)'}; color: ${authorIsVip ? 'white' : 'black'}; font-size:11px; padding:4px 8px;">
+                                            ${authorIsVip ? 'Võta VIP' : 'Anna VIP'}
                                         </button>
                                     ` : ''}
                                 </div>
@@ -181,23 +170,19 @@
         }
 
         async function toggleVip(userId, currentStatus) {
-            if (!confirm("Muuda kasutaja staatust?")) return;
             try {
                 await pb.collection('users').update(userId, { "is_pro": !currentStatus });
-                alert("Tehtud!");
-                loadPosts(); 
+                loadPosts();
             } catch (e) { alert("Viga: " + e.message); }
         }
 
         async function vote(postId) {
             if (!pb.authStore.isValid) return alert("Logi sisse!");
             try {
-                const post = await pb.collection('posts').getOne(postId);
-                if (post.author === pb.authStore.model.id) return alert("Oma poolt ei hääletata!");
                 await pb.collection('votes').create({ user: pb.authStore.model.id, post: postId });
                 await pb.collection('posts').update(postId, { "votes+": 1 });
                 loadPosts();
-            } catch (e) { alert("Oled juba hääletanud!"); }
+            } catch (e) { alert("Hääletatud!"); }
         }
 
         async function createNewPost() {
@@ -205,8 +190,7 @@
             if(!title) return;
             try {
                 await pb.collection('posts').create({
-                    title: title,
-                    description: document.getElementById('post-desc').value,
+                    title: title, description: document.getElementById('post-desc').value,
                     votes: 0, status: 'uue', author: pb.authStore.model.id
                 });
                 location.reload();
@@ -216,8 +200,8 @@
         async function startEdit(postId) {
             const titleEl = document.getElementById(`title-${postId}`);
             const descEl = document.getElementById(`desc-${postId}`);
-            const newTitle = prompt("Uus pealkiri:", titleEl.innerText);
-            const newDesc = prompt("Uus kirjeldus:", descEl.innerText);
+            const newTitle = prompt("Pealkiri:", titleEl.innerText);
+            const newDesc = prompt("Kirjeldus:", descEl.innerText);
             if (newTitle) {
                 await pb.collection('posts').update(postId, { title: newTitle, description: newDesc });
                 loadPosts();
