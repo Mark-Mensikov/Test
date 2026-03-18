@@ -66,33 +66,25 @@
     <script>
         let pb;
 
-        async function init() {
-            try {
-                const config = await fetch('/config').then(res => res.json());
-                pb = new PocketBase(config.pbUrl);
-
-                const urlParams = new URLSearchParams(window.location.search);
-                if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
+        if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
     try {
-        // Обновляем толькоverified, не трогая другие поля
-        await pb.collection('users').update(pb.authStore.model.id, {
-            verified: true
+        // Используем кастомное поле 'is_pro' вместо системного 'verified'
+        await pb.collection('users').update(pb.authStore.model.id, { 
+            "is_pro": true 
         });
-
-        // ОБЯЗАТЕЛЬНО: обновляем токен, чтобы фронтенд узнал о новом статусе
+        
+        // Обновляем данные сессии
         await pb.collection('users').authRefresh();
 
         window.history.replaceState({}, document.title, "/");
-        alert("Makse õnnestus! Oled nüüd VIP.");
-        location.reload();
+        alert("Makse õnnestus! Oled nüüd VIP kasutaja.");
+        location.reload(); 
     } catch (err) {
-        // Это выведет в консоль ТОЧНУЮ причину (например, какой валидатор не прошел)
-        console.error("PocketBase Error Details:", err.response);
-        alert("Viga: " + (err.response.message || "Andmebaasi viga 400"));
+        console.error("DEBUG: Full error response:", err.response); // Посмотри это в консоли!
+        alert("Viga: " + err.message);
     }
     return;
 }
-
                 renderUI();
                 loadPosts();
             } catch (e) { console.error("Init viga:", e); }
