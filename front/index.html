@@ -71,10 +71,8 @@
                 const config = await fetch('/config').then(res => res.json());
                 pb = new PocketBase(config.pbUrl);
 
-                // Kontrollime, kas tulime Stripe'ist tagasi
                 const urlParams = new URLSearchParams(window.location.search);
                 if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
-                    // Kasutame 'verified' välja VIP staatuse jaoks
                     await pb.collection('users').update(pb.authStore.model.id, { verified: true });
                     window.history.replaceState({}, document.title, "/");
                     alert("Täname! Oled nüüd VIP kasutaja.");
@@ -94,7 +92,7 @@
             const authForms = document.getElementById('auth-forms');
 
             if (pb.authStore.isValid) {
-                const isVip = pb.authStore.model.verified; // Kasutame 'verified'
+                const isVip = pb.authStore.model.verified;
                 authSection.innerHTML = `
                     <span>${pb.authStore.model.email} ${isVip ? '<span class="vip-badge">VIP</span>' : ''}</span>
                     <button onclick="logout()" style="background:var(--danger); margin-left:10px;">Välju</button>
@@ -123,7 +121,6 @@
             const email = document.getElementById('reg-email').value;
             const password = document.getElementById('reg-pass').value;
             const passwordConfirm = document.getElementById('reg-pass-confirm').value;
-            
             try {
                 await pb.collection('users').create({ email, password, passwordConfirm, verified: false });
                 await pb.collection('users').authWithPassword(email, password);
@@ -132,45 +129,63 @@
         }
 
         async function loadPosts() {
-    const container = document.getElementById('posts-list');
-    try {
-        const posts = await pb.collection('posts').getFullList({ sort: '-votes', expand: 'author' });
-        container.innerHTML = posts.map(p => {
-            const authorIsVip = p.expand?.author?.verified;
-            // Проверяем: является ли текущий юзер автором И випом
-            const canEdit = pb.authStore.isValid && pb.authStore.model.id === p.author && pb.authStore.model.verified;
-
-            return `
-                <div class="card post ${authorIsVip ? 'is-vip' : ''}">
-                    <div class="vote-section">
-                        <button onclick="vote('${p.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>▲</button>
-                        <span class="vote-count">${p.votes || 0}</span>
-                    </div>
-                    <div style="flex:1">
-                        <span class="status-badge">${p.status}</span>
-                        ${authorIsVip ? '<span class="vip-badge">VIP AUTOR</span>' : ''}
-                        
-                        <h3 id="title-${p.id}" style="margin: 8px 0 4px 0">${p.title}</h3>
-                        <p id="desc-${p.id}" style="margin:0; color:#666; font-size:14px;">${p.description || ''}</p>
-                        
-                        ${canEdit ? `
-                            <div style="margin-top: 10px;">
-                                <button onclick="startEdit('${p.id}')" style="background:#6c757d; font-size:12px; padding:5px 10px;">Muuda</button>
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-            `;
-        }).join('');
-    } catch (e) { container.innerHTML = "Viga laadimisel."; }
-}
-        async function vote(postId) {
+            const container = document.getElementById('posts-list');
             try {
-                await pb.collection('votes').create({ user: pb.authStore.model.id, post: postId });
+                const posts = await pb.collection('posts').getFullList({ sort: '-votes', expand: 'author' });
+                container.innerHTML = posts.map(p => {
+                    const authorIsVip = p.expand?.author?.verified;
+                    const canEdit = pb.authStore.isValid && pb.authStore.model.id === p.author && pb.authStore.model.verified;
+
+                    return `
+                        <div class="card post ${authorIsVip ? 'is-vip' : ''}">
+                            <div class="vote-section">
+                                <button onclick="vote('${p.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>▲</button>
+                                <span class="vote-count">${p.votes || 0}</span>
+                            </div>
+                            <div style="flex:1">
+                                <span class="status-badge">${p.status}</span>
+                                ${authorIsVip ? '<span class="vip-badge">VIP AUTOR</span>' : ''}
+                                <h3 id="title-${p.id}" style="margin: 8px 0 4px 0">${p.title}</h3>
+                                <p id="desc-${p.id}" style="margin:0; color:#666; font-size:14px;">${p.description || ''}</p>
+                                ${canEdit ? `
+                                    <div style="margin-top: 10px;">
+                                        <button onclick="startEdit('${p.id}')" style="background:#6c757d; font-size:12px; padding:5px 10px;">Muuda</button>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) { container.innerHTML = "Viga laadimisel."; }
+        }
+
+        async function vote(postId) {
+            if (!pb.authStore.isValid) return alert("Logi sisse!");
+
+            try {
                 const post = await pb.collection('posts').getOne(postId);
-                await pb.collection('posts').update(postId, { votes: (post.votes || 0) + 1 });
+                
+                // Проверка: нельзя голосовать за свой пост
+                if (post.author === pb.authStore.model.id) {
+                    return alert("Oma postituse poolt ei saa hääletada!");
+                }
+
+                // Пытаемся создать запись о голосе
+                await pb.collection('votes').create({ 
+                    user: pb.authStore.model.id, 
+                    post: postId 
+                });
+
+                // Если запись создана успешно (Unique Index не сработал), обновляем счетчик
+                await pb.collection('posts').update(postId, { 
+                    "votes+": 1 
+                });
+
                 loadPosts();
-            } catch (e) { alert("Sa oled juba hääletanud!"); }
+            } catch (e) {
+                // Если ошибка 400 или 404, скорее всего голос уже есть
+                alert("Sa oled juba hääletanud selle poolt!");
+            }
         }
 
         async function createNewPost() {
@@ -186,33 +201,26 @@
             } catch (e) { alert(e.message); }
         }
 
+        async function startEdit(postId) {
+            const titleEl = document.getElementById(`title-${postId}`);
+            const descEl = document.getElementById(`desc-${postId}`);
+            const newTitle = prompt("Uus pealkiri:", titleEl.innerText);
+            const newDesc = prompt("Uus kirjeldus:", descEl.innerText);
+            
+            if (newTitle !== null && newTitle !== "") {
+                try {
+                    await pb.collection('posts').update(postId, { title: newTitle, description: newDesc });
+                    loadPosts();
+                } catch (e) { alert("Viga muutmises: " + e.message); }
+            }
+        }
+
         function toggleAuth(showReg) {
             document.getElementById('login-view').style.display = showReg ? 'none' : 'block';
             document.getElementById('register-view').style.display = showReg ? 'block' : 'none';
         }
-
         function logout() { pb.authStore.clear(); location.reload(); }
-
         window.onload = init;
-        async function startEdit(postId) {
-    const titleEl = document.getElementById(`title-${postId}`);
-    const descEl = document.getElementById(`desc-${postId}`);
-    
-    const newTitle = prompt("Uus pealkiri:", titleEl.innerText);
-    const newDesc = prompt("Uus kirjeldus:", descEl.innerText);
-    
-    if (newTitle !== null && newTitle !== "") {
-        try {
-            await pb.collection('posts').update(postId, {
-                title: newTitle,
-                description: newDesc
-            });
-            loadPosts(); // Перезагружаем список
-        } catch (e) {
-            alert("Viga muutmises: " + e.message);
-        }
-    }
-}
     </script>
 </body>
 </html>
