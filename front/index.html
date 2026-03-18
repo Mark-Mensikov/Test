@@ -3,27 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tagasiside Portaal</title>
+    <title>Tagasiside Portaal PRO</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pocketbase/0.21.1/pocketbase.umd.js"></script>
     <style>
-        :root { --primary: #007bff; --success: #28a745; --danger: #dc3545; --bg: #f4f7f6; }
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: var(--bg); color: #333; }
+        :root { --primary: #007bff; --success: #28a745; --danger: #dc3545; --bg: #f4f7f6; --vip: #ffd700; }
+        body { font-family: 'Segoe UI', sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: var(--bg); }
         .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        .auth-box { text-align: right; margin-bottom: 20px; }
-        input, textarea { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
-        button { cursor: pointer; padding: 10px 20px; border: none; border-radius: 6px; background: var(--primary); color: white; transition: 0.2s; font-weight: 600; }
-        button:hover { opacity: 0.9; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        .post { display: flex; align-items: flex-start; gap: 20px; }
+        .auth-box { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        input, textarea { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        button { cursor: pointer; padding: 10px 20px; border: none; border-radius: 6px; background: var(--primary); color: white; font-weight: bold; }
+        .vip-badge { background: var(--vip); color: #333; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px; border: 1px solid #b8860b; }
+        .post { display: flex; gap: 20px; border-left: 5px solid var(--primary); }
+        .post.is-vip { border-left-color: var(--vip); background: #fffdf0; }
         .vote-section { text-align: center; min-width: 60px; }
-        .vote-count { display: block; font-size: 20px; font-weight: bold; margin: 5px 0; }
-        .status-badge { font-size: 11px; padding: 3px 8px; border-radius: 12px; background: #eee; text-transform: uppercase; color: #666; }
-        .nav-link { color: var(--primary); cursor: pointer; text-decoration: underline; font-size: 14px; }
+        .vote-count { display: block; font-size: 22px; font-weight: bold; }
+        .nav-link { color: var(--primary); cursor: pointer; text-decoration: underline; }
     </style>
 </head>
 <body>
 
-    <div class="auth-box" id="auth-section">Laadin...</div>
+    <div class="auth-box">
+        <h2>💡 Feedback Board</h2>
+        <div id="auth-section">Laadin...</div>
+    </div>
 
     <div id="auth-forms" class="card" style="display: none;">
         <div id="login-view">
@@ -31,34 +33,49 @@
             <input type="email" id="login-email" placeholder="E-mail">
             <input type="password" id="login-pass" placeholder="Parool">
             <button onclick="handleLogin()">Sisene</button>
-            <p>Pole kontot? <span class="nav-link" onclick="toggleAuth(true)">Registreeri siin</span></p>
+            <p>Pole kontot? <span class="nav-link" onclick="toggleAuth(true)">Registreeri</span></p>
         </div>
         <div id="register-view" style="display: none;">
-            <h3>Loo uus konto</h3>
+            <h3>Loo konto</h3>
             <input type="email" id="reg-email" placeholder="E-mail">
-            <input type="password" id="reg-pass" placeholder="Parool (min 8 märki)">
+            <input type="password" id="reg-pass" placeholder="Parool">
             <input type="password" id="reg-pass-confirm" placeholder="Kinnita parool">
             <button onclick="handleRegister()" style="background: var(--success)">Loo konto</button>
-            <p>On juba konto? <span class="nav-link" onclick="toggleAuth(false)">Logi sisse siin</span></p>
+            <p>On konto? <span class="nav-link" onclick="toggleAuth(false)">Logi sisse</span></p>
         </div>
+    </div>
+
+    <div id="vip-promo" class="card" style="display: none; background: linear-gradient(to right, #fff9c4, #fff);">
+        <strong>Tule PRO kasutajaks!</strong> Toeta portaali 15€ eest и saad VIP märgi.
+        <br><br>
+        <a href="https://buy.stripe.com/test_aFacN53uE0TNgqoeEHe7m02"><button style="background: var(--vip); color: #000;">Osta VIP staatus</button></a>
     </div>
 
     <div id="new-post-form" class="card" style="display: none;">
         <h3>Lisa uus ettepanek</h3>
-        <input type="text" id="post-title" placeholder="Mida saaksime parandada?">
-        <textarea id="post-desc" rows="3" placeholder="Kirjelda oma ideed lähemalt..."></textarea>
-        <button onclick="createNewPost()">Saada ettepanek</button>
+        <input type="text" id="post-title" placeholder="Pealkiri">
+        <textarea id="post-desc" rows="3" placeholder="Kirjeldus..."></textarea>
+        <button onclick="createNewPost()">Saada</button>
     </div>
 
-    <h2>Kõik ettepanekud</h2>
-    <div id="posts-list">Laadin postitusi...</div>
+    <div id="posts-list">Laadin...</div>
 
     <script>
         let pb;
+        const STRIPE_LINK = "https://buy.stripe.com/test_eVq14n9T2gSL2zycwze7m01"; // Твоя ссылка
 
         async function init() {
             const config = await fetch('/config').then(res => res.json());
             pb = new PocketBase(config.pbUrl);
+            
+            // Проверка возврата со Stripe
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
+                await pb.collection('users').update(pb.authStore.model.id, { is_pro: true });
+                window.history.replaceState({}, document.title, "/"); // Убираем хвостик из URL
+                alert("Oled nüüd VIP kasutaja! Täname toetuse eest!");
+            }
+
             renderUI();
             loadPosts();
         }
@@ -66,65 +83,64 @@
         function renderUI() {
             const authSection = document.getElementById('auth-section');
             const postForm = document.getElementById('new-post-form');
-            const authForms = document.getElementById('auth-forms');
+            const vipPromo = document.getElementById('vip-promo');
 
             if (pb.authStore.isValid) {
-                authSection.innerHTML = `👤 ${pb.authStore.model.email} | <button onclick="logout()" style="background:var(--danger)">Välju</button>`;
+                const isVip = pb.authStore.model.is_pro;
+                authSection.innerHTML = `
+                    <span>${pb.authStore.model.email} ${isVip ? '<span class="vip-badge">VIP</span>' : ''}</span>
+                    <button onclick="logout()" style="background:var(--danger); margin-left:10px;">Välju</button>
+                `;
                 postForm.style.display = 'block';
-                authForms.style.display = 'none';
+                vipPromo.style.display = isVip ? 'none' : 'block';
             } else {
-                authSection.innerHTML = `<button onclick="document.getElementById('auth-forms').style.display='block'">Logi sisse / Registreeri</button>`;
+                authSection.innerHTML = `<button onclick="document.getElementById('auth-forms').style.display='block'">Logi sisse</button>`;
                 postForm.style.display = 'none';
+                vipPromo.style.display = 'none';
             }
-        }
-
-        function toggleAuth(showReg) {
-            document.getElementById('login-view').style.display = showReg ? 'none' : 'block';
-            document.getElementById('register-view').style.display = showReg ? 'block' : 'none';
         }
 
         async function handleLogin() {
             try {
-                await pb.collection('users').authWithPassword(
-                    document.getElementById('login-email').value,
-                    document.getElementById('login-pass').value
-                );
+                await pb.collection('users').authWithPassword(document.getElementById('login-email').value, document.getElementById('login-pass').value);
                 location.reload();
             } catch (e) { alert("Viga: " + e.message); }
         }
 
         async function handleRegister() {
             const email = document.getElementById('reg-email').value;
-            const pass = document.getElementById('reg-pass').value;
-            const confirm = document.getElementById('reg-password-confirm'); // Исправлено ID
-            
+            const password = document.getElementById('reg-pass').value;
+            const passwordConfirm = document.getElementById('reg-pass-confirm').value;
             try {
-                await pb.collection('users').create({
-                    email, password: pass, passwordConfirm: document.getElementById('reg-pass-confirm').value
-                });
-                await pb.collection('users').authWithPassword(email, pass);
+                await pb.collection('users').create({ email, password, passwordConfirm, is_pro: false });
+                await pb.collection('users').authWithPassword(email, password);
                 location.reload();
-            } catch (e) { alert("Viga: " + e.message); }
+            } catch (e) { alert(e.message); }
         }
 
         async function loadPosts() {
             const container = document.getElementById('posts-list');
             try {
-                const posts = await pb.collection('posts').getFullList({ sort: '-votes' });
-                container.innerHTML = posts.map(p => `
-                    <div class="card post">
-                        <div class="vote-section">
-                            <button onclick="vote('${p.id}')" ${!pb.authStore.isValid ? 'disabled' : ''} style="background:#eee; color:#333; width:100%">▲</button>
-                            <span class="vote-count">${p.votes || 0}</span>
+                // Используем expand, чтобы получить данные об авторе (его VIP статус)
+                const posts = await pb.collection('posts').getFullList({ sort: '-votes', expand: 'author' });
+                container.innerHTML = posts.map(p => {
+                    const authorIsVip = p.expand?.author?.is_pro;
+                    return `
+                        <div class="card post ${authorIsVip ? 'is-vip' : ''}">
+                            <div class="vote-section">
+                                <button onclick="vote('${p.id}')" ${!pb.authStore.isValid ? 'disabled' : ''}>▲</button>
+                                <span class="vote-count">${p.votes || 0}</span>
+                            </div>
+                            <div style="flex:1">
+                                <span class="status-badge">${p.status}</span>
+                                ${authorIsVip ? '<span class="vip-badge">VIP AUTHOR</span>' : ''}
+                                <h3 style="margin: 5px 0">${p.title}</h3>
+                                <p style="margin:0; color:#666;">${p.description}</p>
+                            </div>
                         </div>
-                        <div style="flex:1">
-                            <span class="status-badge">${p.status || 'uudis'}</span>
-                            <h3 style="margin: 10px 0 5px 0">${p.title}</h3>
-                            <p style="color:#666; margin:0">${p.description || ''}</p>
-                        </div>
-                    </div>
-                `).join('');
-            } catch (e) { container.innerHTML = "Viga laadimisel."; }
+                    `;
+                }).join('');
+            } catch (e) { console.error(e); }
         }
 
         async function createNewPost() {
@@ -132,9 +148,7 @@
                 await pb.collection('posts').create({
                     title: document.getElementById('post-title').value,
                     description: document.getElementById('post-desc').value,
-                    votes: 0,
-                    status: 'under-review',
-                    author: pb.authStore.model.id
+                    votes: 0, status: 'under-review', author: pb.authStore.model.id
                 });
                 location.reload();
             } catch (e) { alert(e.message); }
@@ -146,11 +160,14 @@
                 const post = await pb.collection('posts').getOne(postId);
                 await pb.collection('posts').update(postId, { votes: (post.votes || 0) + 1 });
                 loadPosts();
-            } catch (e) { alert("Sa oled juba hääletanud!"); }
+            } catch (e) { alert("Hääletada saab vaid üks kord!"); }
         }
 
+        function toggleAuth(show) {
+            document.getElementById('login-view').style.display = show ? 'none' : 'block';
+            document.getElementById('register-view').style.display = show ? 'block' : 'none';
+        }
         function logout() { pb.authStore.clear(); location.reload(); }
-
         window.onload = init;
     </script>
 </body>
