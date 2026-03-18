@@ -2,17 +2,11 @@
 <html lang="et">
 <head>
     <meta charset="UTF-8">
-    <title>Meie SaaS</title>
+    <title>Meie SaaS PRO</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pocketbase/0.21.1/pocketbase.umd.js"></script>
     <style>
-        .collection-item {
-            border: 1px solid #ccc;
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 5px;
-        }
-        #data-container {
-            margin-top: 20px;
-        }
+        body { font-family: sans-serif; padding: 20px; }
+        .record { background: #f4f4f4; padding: 10px; margin: 5px 0; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -24,57 +18,52 @@
     </a>
 
     <hr>
-
-    <h2>Andmed PocketBase-ist:</h2>
-    <div id="data-container">Laadin andmeid...</div>
+    <h2>Päeviku sissekanded (Diary):</h2>
+    <div id="diary-list">Laadin...</div>
 
     <script>
-        async function loadPocketBaseData() {
+        async function init() {
+            // 1. Получаем URL из нашего сервера (чтобы не хардкодить его везде)
+            const config = await fetch('/config').then(res => res.json());
+            
+            // 2. Инициализируем PocketBase через SDK
+            // (В браузере через UMD скрипт он доступен как PocketBase)
+            const pb = new PocketBase(config.pbUrl);
+
             try {
-                // 1. Получаем URL PocketBase от нашего Node.js сервера
-                const configResponse = await fetch('/config');
-                const config = await configResponse.json();
-                const pbUrl = config.pbUrl;
+                // 3. Используем ваш код для получения данных
+                // Мы берем коллекцию 'diary', как в вашем примере
+                const records = await pb.collection('diary').getFullList({
+                    sort: '-created', // Сортировка по дате создания (новые сверху)
+                });
 
-                // 2. Запрашиваем данные из конкретной коллекции
-                // ЗАМЕНИТЕ 'your_collection_name' на имя вашей коллекции в PocketBase
-                const collectionName = 'diary'; 
-                const pbResponse = await fetch(`${pbUrl}/api/collections/${collectionName}/records`);
-                
-                if (!pbResponse.ok) {
-                    throw new Error('Andmete pärimine ebaõnnestus');
-                }
+                const container = document.getElementById('diary-list');
+                container.innerHTML = '';
 
-                const data = await pbResponse.json();
-                const container = document.getElementById('data-container');
-                container.innerHTML = ''; // Очищаем текст "Laadin..."
-
-                // 3. Выводим данные на страницу
-                if (data.items.length === 0) {
-                    container.innerHTML = 'Andmeid ei leitud.';
+                if (records.length === 0) {
+                    container.innerHTML = 'Sissekandeid ei leitud.';
                     return;
                 }
 
-                data.items.forEach(item => {
+                // 4. Выводим записи
+                records.forEach(record => {
                     const div = document.createElement('div');
-                    div.className = 'collection-item';
-                    // ЗАМЕНИТЕ 'title' и 'description' на ваши поля из базы
+                    div.className = 'record';
+                    // Предположим, в коллекции diary есть поле 'text' или 'title'
                     div.innerHTML = `
-                        <strong>${item.title || 'Nimetu'}</strong><br>
-                        ${item.description || item.content || ''}
+                        <small>${new Date(record.created).toLocaleString()}</small>
+                        <p>${record.text || record.title || 'Sisu puudub'}</p>
                     `;
                     container.appendChild(div);
                 });
 
-            } catch (error) {
-                console.error('Viga:', error);
-                document.getElementById('data-container').innerHTML = 
-                    '<p style="color:red;">Viga andmete laadimisel. Kontrolli konfigureerimist.</p>';
+            } catch (err) {
+                console.error("PocketBase viga:", err);
+                document.getElementById('diary-list').innerHTML = "Viga andmete laadimisel.";
             }
         }
 
-        // Запускаем загрузку при открытии страницы
-        loadPocketBaseData();
+        init();
     </script>
 </body>
 </html>
