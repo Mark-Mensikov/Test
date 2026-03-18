@@ -131,15 +131,21 @@
         async function loadPosts() {
     const container = document.getElementById('posts-list');
     try {
+        // Подгружаем посты и расширяем данные об авторе
         const posts = await pb.collection('posts').getFullList({ sort: '-votes', expand: 'author' });
         
-        // Получаем данные текущего пользователя
-        const currentUser = pb.authStore.model;
-        const isAdmin = currentUser?.is_admin === true;
+        // Получаем актуальные данные пользователя напрямую из authStore
+        const user = pb.authStore.model;
+        const isAdmin = user?.is_admin === true;
 
         container.innerHTML = posts.map(p => {
             const authorIsVip = p.expand?.author?.verified;
-            const canEdit = pb.authStore.isValid && (currentUser.id === p.author && currentUser.verified || isAdmin);
+            
+            // Права на редактирование: автор-VIP или любой Админ
+            const canEdit = pb.authStore.isValid && ((user.id === p.author && user.verified) || isAdmin);
+            
+            // Права на удаление: ТОЛЬКО Админ
+            const canDelete = pb.authStore.isValid && isAdmin;
 
             return `
                 <div class="card post ${authorIsVip ? 'is-vip' : ''}">
@@ -156,14 +162,16 @@
                         
                         <div style="margin-top: 10px; display: flex; gap: 10px;">
                             ${canEdit ? `<button onclick="startEdit('${p.id}')" style="background:#6c757d; font-size:12px; padding:5px 10px;">Muuda</button>` : ''}
-                            
-                            ${isAdmin ? `<button onclick="deletePost('${p.id}')" style="background:var(--danger); font-size:12px; padding:5px 10px;">Kustuta</button>` : ''}
+                            ${canDelete ? `<button onclick="deletePost('${p.id}')" style="background:var(--danger); font-size:12px; padding:5px 10px;">Kustuta</button>` : ''}
                         </div>
                     </div>
                 </div>
             `;
         }).join('');
-    } catch (e) { container.innerHTML = "Viga laadimisel."; }
+    } catch (e) { 
+        console.error(e);
+        container.innerHTML = "Viga laadimisel."; 
+    }
 }
 
         async function vote(postId) {
