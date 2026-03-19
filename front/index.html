@@ -69,7 +69,7 @@ button.outline { border:1px solid #ccc; background:white; }
 
 <script>
 const pb = new PocketBase("http://pocketbase-hv4bvovfn86uwdafxs7d7p1s.176.112.158.3.sslip.io");
-pb.autoCancellation(false); // предотвращает ошибку "autocancelled"
+pb.autoCancellation(false); // отключаем автоотмену запросов
 
 let currentUser = null;
 let myVotes = new Set();
@@ -133,14 +133,16 @@ async function loadMyVotes() {
 async function loadPosts() {
     document.getElementById("errorBox").style.display = "none";
     try {
-        // Админ видит всё, обычный — completed + свои, гость — только completed
+        // Админ видит ВСЕ посты, независимо от статуса
+        // Обычный пользователь видит completed + свои
+        // Гость — только completed
         let filter = "";
         if (!currentUser) {
             filter = 'status = "completed"';
         } else if (!currentUser.is_admin) {
             filter = `status = "completed" || author = "${currentUser.id}"`;
         }
-        // для админа filter остаётся пустым → видит все посты
+        // для админа filter остаётся "" → видит всё
 
         const postsData = await pb.collection("posts").getFullList({
             sort: "-created",
@@ -186,7 +188,7 @@ async function loadPosts() {
                     <div class="meta">${author.email || "аноним"} ${statusBadge} · ${new Date(post.created).toLocaleDateString("ru")}</div>
                     
                     ${isAdmin ? `
-                    <div style="margin:12px 0;">
+                    <div style="margin:12px 0; display:flex; gap:8px; flex-wrap:wrap;">
                         ${post.status === "under-review" ? `
                             <button class="success" onclick="moderate('${post.id}', 'completed')">Завершено ✓</button>
                             <button class="danger" onclick="moderate('${post.id}', 'rejected')">Отклонить ✗</button>
@@ -210,7 +212,8 @@ async function loadPosts() {
         }).join("") || "<p>Постов нет</p>";
     } catch (err) {
         console.error(err);
-        document.getElementById("errorBox").innerHTML = "Ошибка загрузки: " + (err.message || "неизвестная ошибка");
+        let msg = err.status === 403 ? "403: Проверьте API Rules для posts" : err.message;
+        document.getElementById("errorBox").innerHTML = "Ошибка: " + msg;
         document.getElementById("errorBox").style.display = "block";
     }
 }
@@ -278,7 +281,7 @@ async function deletePost(id) {
 
 async function addComment(e, postId) {
     e.preventDefault();
-    const text = document.getElementById(`c-${post.id}`).value.trim();
+    const text = document.getElementById(`c-${postId}`).value.trim();
     if (!text) return;
     try {
         await pb.collection("comments").create({ post: postId, user: currentUser.id, text });
