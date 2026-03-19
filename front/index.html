@@ -12,13 +12,12 @@
         .auth-box { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         
         .vip-badge { background: var(--vip); color: #333; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 5px; }
-        .admin-badge { background: var(--admin); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 5px; }
+        .author-admin-badge { background: var(--admin); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 5px; }
         
         .post { display: flex; gap: 20px; border-left: 5px solid var(--primary); transition: 0.3s; }
         .post.is-vip { border-left-color: var(--vip); background: #fffdf0; }
         .post.is-admin-post { border-left-color: var(--admin); background: #fff5f5; border-left-width: 10px; }
         
-        /* Стиль для скрытых (модерируемых) постов, которые видит только автор или админ */
         .post.is-moderating { border-left-style: dashed; background: #fafafa; border-left-color: #ccc; }
         .post.is-rejected { opacity: 0.5; filter: grayscale(1); }
 
@@ -96,19 +95,25 @@
                 const isAdmin = user?.is_admin === true;
 
                 container.innerHTML = posts.map(p => {
-                    const author = p.expand?.author;
+                    const author = p.expand?.author || {};
                     const isOwner = user?.id === p.author;
                     
-                    // Логика отображения:
-                    // 1. Если статус completed — видят все.
-                    // 2. Если under-review или rejected — видит ТОЛЬКО автор или админ.
+                    // Пост виден только если: completed ИЛИ (under-review/rejected И (владелец ИЛИ админ))
                     if (p.status !== 'completed' && !isOwner && !isAdmin) return '';
 
                     let postClasses = `card post`;
                     if (p.status === 'under-review') postClasses += ' is-moderating';
                     if (p.status === 'rejected') postClasses += ' is-rejected';
-                    if (author?.is_admin) postClasses += ' is-admin-post';
-                    else if (author?.is_pro) postClasses += ' is-vip';
+                    if (author.is_admin) postClasses += ' is-admin-post';
+                    else if (author.is_pro) postClasses += ' is-vip';
+
+                    // Определяем бейдж автора (показываем всегда, если пост виден)
+                    let authorBadge = '';
+                    if (author.is_admin) {
+                        authorBadge = '<span class="author-admin-badge">ADMIN</span>';
+                    } else if (author.is_pro) {
+                        authorBadge = '<span class="vip-badge">VIP</span>';
+                    }
 
                     return `
                         <div class="${postClasses}">
@@ -117,13 +122,13 @@
                                 <span class="vote-count">${p.votes}</span>
                             </div>
                             <div style="flex:1">
-                                <div style="display:flex; justify-content:space-between;">
+                                <div style="display:flex; justify-content:space-between; align-items: center;">
                                     <span class="status-badge ${p.status === 'completed' ? 'status-completed' : 'status-review'}">
-                                        ${p.status === 'under-review' ? 'Ootel' : p.status}
+                                        ${p.status === 'under-review' ? 'Ootel' : p.status === 'rejected' ? 'Tagasi lükatud' : p.status}
                                     </span>
                                     <div style="text-align:right">
-                                        <small>${author?.email || 'Anonüümne'}</small>
-                                        ${author?.is_pro ? '<span class="vip-badge">VIP</span>' : ''}
+                                        <small>${author.email || 'Anonüümne'}</small>
+                                        ${authorBadge}
                                     </div>
                                 </div>
                                 <h3>${p.title}</h3>
@@ -139,30 +144,41 @@
                                         <button onclick="deletePost('${p.id}')" style="background:var(--danger); font-size:10px; padding:3px 6px;">Kustuta</button>
                                     </div>
                                 ` : ''}
-                                ${isOwner && p.status === 'under-review' && !isAdmin ? '<p style="font-size:10px; color:orange;"><i>Seda postitust näed praegu ainult Sina.</i></p>' : ''}
+                                ${isOwner && p.status !== 'completed' ? '<p style="font-size:10px; color:orange;"><i>Seda postitust näevad praegu ainult Sina ${isAdmin ? 'ja administraatorid' : ''}.</i></p>' : ''}
                             </div>
                         </div>
                     `;
                 }).join('');
-            } catch (e) { container.innerHTML = "Viga laadimisel."; }
+            } catch (e) { 
+                console.error(e);
+                container.innerHTML = "Viga postituste laadimisel."; 
+            }
         }
 
         async function createNewPost() {
-            const title = document.getElementById('post-title').value;
-            if(!title) return;
+            const title = document.getElementById('post-title').value.trim();
+            if (!title) return alert("Pealkiri on kohustuslik!");
             try {
                 await pb.collection('posts').create({
-                    title, description: document.getElementById('post-desc').value,
-                    votes: 0, status: 'under-review', author: pb.authStore.model.id
+                    title,
+                    description: document.getElementById('post-desc').value.trim(),
+                    votes: 0,
+                    status: 'under-review',
+                    author: pb.authStore.model.id
                 });
-                alert("Postitus saadetud moderaatorile!");
+                alert("Postitus saadetud moderaatorile ülevaatuseks!");
                 location.reload();
-            } catch (e) { alert("Viga!"); }
+            } catch (e) { 
+                console.error(e);
+                alert("Viga postitamisel!"); 
+            }
         }
 
         async function updateStatus(id, stat) {
-            await pb.collection('posts').update(id, { status: stat });
-            loadPosts();
+            try {
+                await pb.collection('posts').update(id, { status: stat });
+                loadPosts();
+            } catch (e) { alert("Staatusi muutmine ebaõnnestus"); }
         }
 
         async function vote(id) {
@@ -170,21 +186,38 @@
                 await pb.collection('votes').create({ user: pb.authStore.model.id, post: id });
                 await pb.collection('posts').update(id, { "votes+": 1 });
                 loadPosts();
-            } catch (e) { alert("Juba hääletatud!"); }
+            } catch (e) { alert("Sa oled juba hääletanud selle idee poolt!"); }
         }
 
         async function deletePost(id) {
-            if(confirm("Kustutada?")) { await pb.collection('posts').delete(id); loadPosts(); }
+            if (!confirm("Kas kindlasti kustutada?")) return;
+            try {
+                await pb.collection('posts').delete(id);
+                loadPosts();
+            } catch (e) { alert("Kustutamine ebaõnnestus"); }
         }
 
         async function handleLogin() {
+            const email = document.getElementById('login-email').value.trim();
+            const pass = document.getElementById('login-pass').value;
+            if (!email || !pass) return alert("Sisesta e-mail ja parool");
             try {
-                await pb.collection('users').authWithPassword(document.getElementById('login-email').value, document.getElementById('login-pass').value);
+                await pb.collection('users').authWithPassword(email, pass);
                 location.reload();
-            } catch (e) { alert("Viga!"); }
+            } catch (e) { alert("Vale e-mail või parool"); }
         }
 
-        function logout() { pb.authStore.clear(); location.reload(); }
+        function logout() { 
+            pb.authStore.clear(); 
+            location.reload(); 
+        }
+
+        // Функция toggleAuth не использовалась → либо удали, либо реализуй регистрацию
+        function toggleAuth(showRegister) {
+            // Если захочешь добавить регистрацию — здесь можно расширить
+            alert("Registreerumine pole veel implementeeritud.");
+        }
+
         window.onload = init;
     </script>
 </body>
