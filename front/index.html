@@ -16,7 +16,7 @@
     --light:  #e9ecef;
 }
 body {
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: system-ui, sans-serif;
     max-width: 900px;
     margin: 0 auto;
     padding: 20px;
@@ -38,13 +38,11 @@ body {
 .post.under-review { border-left-color: #6c757d; background: #fffef5; }
 .post.completed   { border-left-color: var(--success); }
 .post.rejected    { border-left-color: var(--danger); opacity: 0.8; }
-.post.is-vip      { border-left-color: var(--vip); }
-.post.is-admin    { border-left-color: var(--admin); }
 .vote-area { text-align: center; min-width: 60px; }
 .vote-btn { font-size: 1.6rem; padding: 2px 10px; cursor: pointer; }
 .up.active   { color: var(--success); font-weight: bold; }
 .down.active { color: var(--danger);  font-weight: bold; }
-.score { font-weight: bold; font-size: 1.2rem; }
+.score { font-weight: bold; font-size: 1.2rem; margin: 4px 0; }
 .meta { color: #555; font-size: 0.9rem; margin: 8px 0; }
 .badge {
     padding: 3px 8px;
@@ -64,17 +62,6 @@ body {
     border-radius: 8px;
 }
 .comment-form { display: flex; gap: 8px; margin-top: 12px; }
-.comment-form input { flex: 1; }
-button {
-    padding: 6px 12px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-}
-button.primary { background: var(--primary); color: white; }
-button.success { background: var(--success); color: white; }
-button.danger  { background: var(--danger);  color: white; }
-button.outline { border: 1px solid #ccc; background: white; }
 #errorBox {
     background: #ffebee;
     color: #c62828;
@@ -95,17 +82,15 @@ button.outline { border: 1px solid #ccc; background: white; }
 <div id="errorBox" style="display:none;"></div>
 
 <div id="authBox" class="card" style="display:none;">
-    <input id="email"    placeholder="Email"    type="email">
-    <input id="password" placeholder="Пароль"   type="password">
-    <div style="margin-top:12px;">
-        <button class="primary" onclick="login()">Войти</button>
-        <button class="outline" onclick="register()">Регистрация</button>
-    </div>
+    <input id="email" placeholder="Email" type="email">
+    <input id="password" placeholder="Пароль" type="password">
+    <button class="primary" onclick="login()">Войти</button>
+    <button onclick="register()">Регистрация</button>
 </div>
 
 <div id="newPost" class="card" style="display:none;">
     <input id="title" placeholder="Заголовок">
-    <textarea id="desc" placeholder="Описание идеи / проблемы / предложения..."></textarea>
+    <textarea id="desc" placeholder="Описание..."></textarea>
     <button class="primary" onclick="createPost()">Отправить</button>
 </div>
 
@@ -119,29 +104,27 @@ let myVotes = new Set();
 window.onload = async () => {
     currentUser = pb.authStore.model;
     renderAuth();
-    if (currentUser) await loadMyVotes();
+    if (currentUser) await loadMyVotes().catch(console.error);
     await loadPosts();
-
-    // realtime
+    
     pb.collection("posts").subscribe("*", () => loadPosts());
     pb.collection("comments").subscribe("*", () => loadPosts());
-    pb.collection("votes").subscribe("*", () => loadMyVotes());
 };
 
 function renderAuth() {
     const el = document.getElementById("auth");
     if (currentUser) {
-        let tags = '';
-        if (currentUser.is_admin) tags += '<span class="badge admin">ADMIN</span>';
-        if (currentUser.is_pro)  tags += '<span class="badge vip">VIP</span>';
+        let badges = '';
+        if (currentUser.is_admin) badges += '<span class="badge admin">ADMIN</span>';
+        if (currentUser.is_pro)  badges += '<span class="badge vip">VIP</span>';
 
         el.innerHTML = `
-            ${currentUser.email} ${tags}
-            <button class="outline" onclick="logout()">Выйти</button>
+            ${currentUser.email} ${badges}
+            <button onclick="logout()">Выйти</button>
         `;
         document.getElementById("newPost").style.display = "block";
     } else {
-        el.innerHTML = `<button onclick="document.getElementById('authBox').style.display='block'">Войти / Зарегистрироваться</button>`;
+        el.innerHTML = `<button onclick="document.getElementById('authBox').style.display='block'">Войти</button>`;
     }
 }
 
@@ -153,7 +136,7 @@ async function login() {
         );
         location.reload();
     } catch (e) {
-        alert("Ошибка входа: " + (e.message || "проверьте данные"));
+        alert("Ошибка входа: " + (e.message || ""));
     }
 }
 
@@ -162,11 +145,7 @@ async function register() {
         const email = document.getElementById("email").value.trim();
         const pass = document.getElementById("password").value;
         await pb.collection("users").create({
-            email,
-            password: pass,
-            passwordConfirm: pass,
-            is_admin: false,
-            is_pro: false
+            email, password: pass, passwordConfirm: pass
         });
         await login();
     } catch (e) {
@@ -177,15 +156,6 @@ async function register() {
 function logout() {
     pb.authStore.clear();
     location.reload();
-}
-
-// ===============================================
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-// ===============================================
-function showError(msg) {
-    const box = document.getElementById("errorBox");
-    box.innerHTML = msg;
-    box.style.display = "block";
 }
 
 async function loadMyVotes() {
@@ -202,13 +172,9 @@ async function loadMyVotes() {
     }
 }
 
-// ===============================================
-// ОСНОВНАЯ ФУНКЦИЯ ЗАГРУЗКИ
-// ===============================================
 async function loadPosts() {
     const errorBox = document.getElementById("errorBox");
     errorBox.style.display = "none";
-    errorBox.innerHTML = "";
 
     try {
         let filter = "";
@@ -275,75 +241,69 @@ async function loadPosts() {
                     <p>${post.description}</p>
                     <div class="meta">
                         ${author.email || "аноним"} ${statusBadge}
-                        · ${new Date(post.created).toLocaleDateString("ru-RU")}
                     </div>
-
                     ${isAdmin ? `
                     <div style="margin:12px 0;">
                         ${post.status === "under-review" ? `
-                            <button class="success" onclick="moderate('${post.id}', 'completed')">Завершено ✓</button>
-                            <button class="danger"  onclick="moderate('${post.id}', 'rejected')">Отклонить ✗</button>
+                            <button class="success" onclick="moderate('${post.id}', 'completed')">Завершено</button>
+                            <button class="danger"  onclick="moderate('${post.id}', 'rejected')">Отклонить</button>
                         ` : ''}
                         ${post.status === "rejected" ? `
-                            <button onclick="moderate('${post.id}', 'under-review')">Вернуть на модерацию</button>
+                            <button onclick="moderate('${post.id}', 'under-review')">Вернуть</button>
                         ` : ''}
                         <button class="danger outline" onclick="deletePost('${post.id}')">Удалить</button>
                     </div>` : ""}
-
                     <div style="margin-top:16px;">
                         ${(commentsByPost[post.id] || []).map(c => `
                             <div class="comment">
                                 <strong>${c.expand?.user?.email || "аноним"}</strong>
-                                <small> · ${new Date(c.created).toLocaleString("ru-RU")}</small>
                                 <p>${c.text}</p>
                             </div>
-                        `).join("") || "<small>Комментариев пока нет</small>"}
-
+                        `).join("") || "<small>Комментариев нет</small>"}
                         ${currentUser ? `
                         <form class="comment-form" onsubmit="addComment(event, '${post.id}'); return false;">
-                            <input type="text" id="comment-${post.id}" placeholder="Написать комментарий..." required>
+                            <input type="text" id="comment-${post.id}" placeholder="Комментарий..." required>
                             <button class="primary">Отправить</button>
                         </form>` : ""}
                     </div>
                 </div>
             </div>`;
-        }).join("") || "<p style='text-align:center; color:#777;'>Постов пока нет</p>";
-
+        }).join("") || "<p>Постов пока нет</p>";
     } catch (err) {
-        console.error("Критическая ошибка загрузки:", err);
+        console.error("Ошибка загрузки:", err);
         let msg = "Ошибка загрузки данных";
-        if (err.status === 403) {
-            msg = `
-                <strong>403 Forbidden — Only superusers can perform this action</strong><br><br>
-                <b>Что нужно сделать:</b><br>
-                1. Зайдите в админку PocketBase<br>
-                2. Collections → <b>comments</b> и <b>votes</b> → API Rules<br>
-                3. List/Search rule → поставьте <code>""</code> (две кавычки — пустая строка)<br>
-                4. Сохраните изменения<br>
-                5. <b>Перезапустите сервер PocketBase полностью</b><br>
-                6. Обновите страницу (Ctrl + Shift + R)
-            `;
-        } else {
-            msg += `<br>${err.message || err}`;
-        }
-        showError(msg);
+        if (err.status === 403) msg = "403: Проверьте API Rules для comments/votes (поставьте \"\" и перезапустите сервер)";
+        if (err.status === 400) msg = "400: Проверьте поля в коллекциях (direction – number, relations правильные)";
+        showError(msg + "<br>" + err.message);
     }
 }
 
-// ===============================================
-// ГОЛОСОВАНИЕ, МОДЕРАЦИЯ, КОММЕНТАРИИ
-// ===============================================
+function showError(msg) {
+    const box = document.getElementById("errorBox");
+    box.innerHTML = msg;
+    box.style.display = "block";
+}
+
 async function castVote(postId, direction) {
     if (!currentUser) return alert("Войдите, чтобы голосовать");
+    direction = Number(direction);
+
     try {
         const opp = direction === 1 ? -1 : 1;
-        const oppRec = await pb.collection("votes").getFirstListItem(
-            `user="${currentUser.id}" && post="${postId}" && direction=${opp}`
-        ).catch(() => null);
-        if (oppRec) await pb.collection("votes").delete(oppRec.id);
+
+        // Удаляем противоположный голос если есть
+        try {
+            const oppRec = await pb.collection("votes").getFirstListItem(
+                `user="${currentUser.id}" && post="${postId}" && direction=${opp}`
+            );
+            await pb.collection("votes").delete(oppRec.id);
+        } catch (e) {
+            if (e.status !== 404) throw e;
+        }
 
         const hasThis = myVotes.has(`${postId}:${direction}`);
         if (hasThis) {
+            // снимаем голос
             const rec = await pb.collection("votes").getFirstListItem(
                 `user="${currentUser.id}" && post="${postId}" && direction=${direction}`
             );
@@ -353,36 +313,44 @@ async function castVote(postId, direction) {
                 downvotes: direction === -1 ? pb.raw("-1") : 0
             });
         } else {
+            // ставим голос
             await pb.collection("votes").create({
                 user: currentUser.id,
                 post: postId,
-                direction
+                direction: direction
             });
             await pb.collection("posts").update(postId, {
                 upvotes:   direction === 1  ? pb.raw("+1") : 0,
                 downvotes: direction === -1 ? pb.raw("+1") : 0
             });
         }
+
         await loadMyVotes();
         await loadPosts();
-    } catch (e) {
-        console.error("Ошибка голосования:", e);
-        alert("Не удалось проголосовать");
+    } catch (err) {
+        console.error("Ошибка castVote:", err);
+        let msg = "Не удалось проголосовать";
+        if (err.status === 400) {
+            msg = "400 Bad Request: проверьте коллекцию votes (direction – number, уникальность user+post, Create rule)";
+        } else if (err.status === 403) {
+            msg = "403: нет прав создавать голоса (проверьте Create rule в votes)";
+        }
+        alert(msg);
     }
 }
 
 async function moderate(id, status) {
-    if (!confirm(`Изменить статус на "${status}"?`)) return;
+    if (!confirm(`Сменить статус на ${status}?`)) return;
     try {
         await pb.collection("posts").update(id, { status });
         loadPosts();
     } catch (e) {
-        alert("Ошибка изменения статуса");
+        alert("Ошибка модерации");
     }
 }
 
 async function deletePost(id) {
-    if (!confirm("Удалить пост навсегда?")) return;
+    if (!confirm("Удалить пост?")) return;
     try {
         await pb.collection("posts").delete(id);
         loadPosts();
@@ -428,7 +396,7 @@ async function addComment(e, postId) {
         input.value = "";
         loadPosts();
     } catch (e) {
-        alert("Ошибка отправки комментария");
+        alert("Ошибка комментария");
     }
 }
 </script>
