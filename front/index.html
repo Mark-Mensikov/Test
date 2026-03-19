@@ -1,224 +1,251 @@
 <!DOCTYPE html>
 <html lang="et">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Feedback Board PRO</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pocketbase/0.21.1/pocketbase.umd.js"></script>
-    <style>
-        :root { --primary: #007bff; --success: #28a745; --danger: #dc3545; --bg: #f4f7f6; --vip: #ffd700; --admin: #ff4757; }
-        body { font-family: 'Segoe UI', sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: var(--bg); color: #333; }
-        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        .auth-box { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        
-        .vip-badge { background: var(--vip); color: #333; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 5px; }
-        .author-admin-badge { background: var(--admin); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 5px; }
-        
-        .post { display: flex; gap: 20px; border-left: 5px solid var(--primary); transition: 0.3s; }
-        .post.is-vip { border-left-color: var(--vip); background: #fffdf0; }
-        .post.is-admin-post { border-left-color: var(--admin); background: #fff5f5; border-left-width: 10px; }
-        
-        .post.is-moderating { border-left-style: dashed; background: #fafafa; border-left-color: #ccc; }
-        .post.is-rejected { opacity: 0.5; filter: grayscale(1); }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feedback Board PRO</title>
 
-        .vote-section { text-align: center; min-width: 60px; }
-        .vote-count { display: block; font-size: 24px; font-weight: bold; margin: 5px 0; }
-        
-        .status-badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: #eee; text-transform: uppercase; font-weight: bold; }
-        .status-completed { background: #d4edda; color: #155724; }
-        .status-review { background: #fff3cd; color: #856404; }
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pocketbase/0.21.1/pocketbase.umd.js"></script>
 
-        input, textarea, select { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
-        button { cursor: pointer; padding: 10px 20px; border: none; border-radius: 6px; background: var(--primary); color: white; font-weight: bold; }
-        .admin-controls { margin-top: 10px; display: flex; gap: 5px; align-items: center; border-top: 1px solid #eee; padding-top: 10px; }
-    </style>
+<style>
+:root {
+    --primary:#007bff;
+    --success:#28a745;
+    --danger:#dc3545;
+    --bg:#f4f7f6;
+    --vip:#ffd700;
+    --admin:#ff4757;
+}
+
+body {
+    font-family:'Segoe UI',sans-serif;
+    max-width:800px;
+    margin:0 auto;
+    padding:20px;
+    background:var(--bg);
+}
+
+.card {
+    background:white;
+    padding:20px;
+    border-radius:10px;
+    margin-bottom:20px;
+}
+
+.post {
+    display:flex;
+    gap:20px;
+    border-left:5px solid var(--primary);
+}
+
+.post.is-vip { border-left-color:var(--vip); }
+.post.is-admin-post { border-left-color:var(--admin); }
+.post.is-rejected { opacity:0.5; }
+
+.vote-section { text-align:center; }
+.vote-count { font-size:22px; font-weight:bold; }
+
+.vip-badge {
+    background:var(--vip);
+    padding:2px 6px;
+    border-radius:4px;
+    margin-left:5px;
+}
+
+.admin-badge {
+    background:var(--admin);
+    color:white;
+    padding:2px 6px;
+    border-radius:4px;
+    margin-left:5px;
+}
+
+.status-badge {
+    font-size:10px;
+    padding:3px 8px;
+    border-radius:10px;
+    background:#eee;
+}
+
+.status-completed { background:#d4edda; }
+.status-review { background:#fff3cd; }
+
+button {
+    padding:8px 15px;
+    border:none;
+    border-radius:6px;
+    background:var(--primary);
+    color:white;
+    cursor:pointer;
+}
+</style>
 </head>
+
 <body>
 
-    <div class="auth-box">
-        <h2>💡 Ettepanekud</h2>
-        <div id="auth-section">Laadin...</div>
-    </div>
+<div class="card">
+    <h2>💡 Feedback System</h2>
+    <div id="auth-section"></div>
+</div>
 
-    <div id="auth-forms" class="card" style="display: none;">
-        <input type="email" id="login-email" placeholder="E-mail">
-        <input type="password" id="login-pass" placeholder="Parool">
-        <button onclick="handleLogin()">Logi sisse</button>
-        <p><small onclick="toggleAuth(true)" style="cursor:pointer; color:var(--primary)">Loo konto</small></p>
-    </div>
+<div id="auth-forms" class="card" style="display:none;">
+    <input id="login-email" placeholder="Email">
+    <input id="login-pass" type="password" placeholder="Password">
+    <button onclick="login()">Login</button>
+    <button onclick="register()">Register</button>
+</div>
 
-    <div id="new-post-form" class="card" style="display: none;">
-        <h3>Uus idee</h3>
-        <input type="text" id="post-title" placeholder="Pealkiri">
-        <textarea id="post-desc" rows="2" placeholder="Kirjeldus..."></textarea>
-        <button onclick="createNewPost()">Saada ülevaatusele</button>
-        <p style="font-size: 11px; color: #888; margin-top: 5px;">* Postitus ilmub avalikult alles pärast moderaatori kinnitust.</p>
-    </div>
+<div id="new-post" class="card" style="display:none;">
+    <input id="title" placeholder="Title">
+    <textarea id="desc" placeholder="Description"></textarea>
+    <button onclick="createPost()">Post</button>
+</div>
 
-    <div id="posts-list">Laadin...</div>
+<div id="posts"></div>
 
-    <script>
-        let pb;
+<script>
+const pb = new PocketBase("http://127.0.0.1:8090");
+let currentUser = null;
+let votedPosts = [];
 
-        async function init() {
-            try {
-                const config = await fetch('/config').then(res => res.json());
-                pb = new PocketBase(config.pbUrl);
-                renderUI();
-                loadPosts();
-            } catch (e) { console.error(e); }
-        }
+window.onload = async () => {
+    currentUser = pb.authStore.model;
+    updateAuthUI();
+    await loadVotes();
+    loadPosts();
+};
 
-        function renderUI() {
-            const user = pb.authStore.model;
-            const authSection = document.getElementById('auth-section');
-            if (pb.authStore.isValid) {
-                authSection.innerHTML = `
-                    <div>
-                        <strong>${user.email}</strong> 
-                        ${user.is_admin ? '<span class="admin-badge">ADMIN</span>' : ''}
-                        <button onclick="logout()" style="background:var(--danger); padding:4px 8px; font-size:12px; margin-left:10px;">Välju</button>
-                    </div>
-                `;
-                document.getElementById('new-post-form').style.display = 'block';
-                document.getElementById('auth-forms').style.display = 'none';
-            } else {
-                authSection.innerHTML = `<button onclick="document.getElementById('auth-forms').style.display='block'">Logi sisse</button>`;
-            }
-        }
+function updateAuthUI() {
+    const el = document.getElementById("auth-section");
 
-        async function loadPosts() {
-            const container = document.getElementById('posts-list');
-            try {
-                const posts = await pb.collection('posts').getFullList({ sort: '-votes', expand: 'author' });
-                const user = pb.authStore.model;
-                const isAdmin = user?.is_admin === true;
+    if (currentUser) {
+        el.innerHTML = `
+            ${currentUser.email}
+            ${currentUser.is_admin ? '<span class="admin-badge">ADMIN</span>' : ''}
+            ${currentUser.is_pro ? '<span class="vip-badge">VIP</span>' : ''}
+            <button onclick="logout()">Logout</button>
+        `;
+        document.getElementById("new-post").style.display = "block";
+    } else {
+        el.innerHTML = `<button onclick="showAuth()">Login</button>`;
+    }
+}
 
-                container.innerHTML = posts.map(p => {
-                    const author = p.expand?.author || {};
-                    const isOwner = user?.id === p.author;
-                    
-                    // Пост виден только если: completed ИЛИ (under-review/rejected И (владелец ИЛИ админ))
-                    if (p.status !== 'completed' && !isOwner && !isAdmin) return '';
+function showAuth() {
+    document.getElementById("auth-forms").style.display = "block";
+}
 
-                    let postClasses = `card post`;
-                    if (p.status === 'under-review') postClasses += ' is-moderating';
-                    if (p.status === 'rejected') postClasses += ' is-rejected';
-                    if (author.is_admin) postClasses += ' is-admin-post';
-                    else if (author.is_pro) postClasses += ' is-vip';
+async function login() {
+    await pb.collection("users").authWithPassword(
+        login-email.value,
+        login-pass.value
+    );
+    location.reload();
+}
 
-                    // Определяем бейдж автора (показываем всегда, если пост виден)
-                    let authorBadge = '';
-                    if (author.is_admin) {
-                        authorBadge = '<span class="author-admin-badge">ADMIN</span>';
-                    } else if (author.is_pro) {
-                        authorBadge = '<span class="vip-badge">VIP</span>';
-                    }
+async function register() {
+    await pb.collection("users").create({
+        email: login-email.value,
+        password: login-pass.value,
+        passwordConfirm: login-pass.value
+    });
+    await login();
+}
 
-                    return `
-                        <div class="${postClasses}">
-                            <div class="vote-section">
-                                <button onclick="vote('${p.id}')" ${!pb.authStore.isValid || p.status !== 'completed' ? 'disabled' : ''}>▲</button>
-                                <span class="vote-count">${p.votes}</span>
-                            </div>
-                            <div style="flex:1">
-                                <div style="display:flex; justify-content:space-between; align-items: center;">
-                                    <span class="status-badge ${p.status === 'completed' ? 'status-completed' : 'status-review'}">
-                                        ${p.status === 'under-review' ? 'Ootel' : p.status === 'rejected' ? 'Tagasi lükatud' : p.status}
-                                    </span>
-                                    <div style="text-align:right">
-                                        <small>${author.email || 'Anonüümne'}</small>
-                                        ${authorBadge}
-                                    </div>
-                                </div>
-                                <h3>${p.title}</h3>
-                                <p style="font-size:14px; color:#555">${p.description}</p>
+function logout() {
+    pb.authStore.clear();
+    location.reload();
+}
 
-                                ${isAdmin ? `
-                                    <div class="admin-controls">
-                                        <select onchange="updateStatus('${p.id}', this.value)" style="width:auto; padding:2px; font-size:11px;">
-                                            <option value="under-review" ${p.status === 'under-review' ? 'selected' : ''}>Ootel (Private)</option>
-                                            <option value="completed" ${p.status === 'completed' ? 'selected' : ''}>Kinnita (Public)</option>
-                                            <option value="rejected" ${p.status === 'rejected' ? 'selected' : ''}>Reject (Private)</option>
-                                        </select>
-                                        <button onclick="deletePost('${p.id}')" style="background:var(--danger); font-size:10px; padding:3px 6px;">Kustuta</button>
-                                    </div>
-                                ` : ''}
-                                ${isOwner && p.status !== 'completed' ? '<p style="font-size:10px; color:orange;"><i>Seda postitust näevad praegu ainult Sina ${isAdmin ? 'ja administraatorid' : ''}.</i></p>' : ''}
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-            } catch (e) { 
-                console.error(e);
-                container.innerHTML = "Viga postituste laadimisel."; 
-            }
-        }
+async function loadVotes() {
+    if (!currentUser) return;
 
-        async function createNewPost() {
-            const title = document.getElementById('post-title').value.trim();
-            if (!title) return alert("Pealkiri on kohustuslik!");
-            try {
-                await pb.collection('posts').create({
-                    title,
-                    description: document.getElementById('post-desc').value.trim(),
-                    votes: 0,
-                    status: 'under-review',
-                    author: pb.authStore.model.id
-                });
-                alert("Postitus saadetud moderaatorile ülevaatuseks!");
-                location.reload();
-            } catch (e) { 
-                console.error(e);
-                alert("Viga postitamisel!"); 
-            }
-        }
+    const votes = await pb.collection("votes").getFullList({
+        filter: `user="${currentUser.id}"`
+    });
 
-        async function updateStatus(id, stat) {
-            try {
-                await pb.collection('posts').update(id, { status: stat });
-                loadPosts();
-            } catch (e) { alert("Staatusi muutmine ebaõnnestus"); }
-        }
+    votedPosts = votes.map(v => v.post);
+}
 
-        async function vote(id) {
-            try {
-                await pb.collection('votes').create({ user: pb.authStore.model.id, post: id });
-                await pb.collection('posts').update(id, { "votes+": 1 });
-                loadPosts();
-            } catch (e) { alert("Sa oled juba hääletanud selle idee poolt!"); }
-        }
+async function loadPosts() {
+    const list = document.getElementById("posts");
 
-        async function deletePost(id) {
-            if (!confirm("Kas kindlasti kustutada?")) return;
-            try {
-                await pb.collection('posts').delete(id);
-                loadPosts();
-            } catch (e) { alert("Kustutamine ebaõnnestus"); }
-        }
+    const posts = await pb.collection("posts").getFullList({
+        sort: "-created",
+        expand: "author"
+    });
 
-        async function handleLogin() {
-            const email = document.getElementById('login-email').value.trim();
-            const pass = document.getElementById('login-pass').value;
-            if (!email || !pass) return alert("Sisesta e-mail ja parool");
-            try {
-                await pb.collection('users').authWithPassword(email, pass);
-                location.reload();
-            } catch (e) { alert("Vale e-mail või parool"); }
-        }
+    list.innerHTML = posts.map(p => {
+        const author = p.expand.author;
 
-        function logout() { 
-            pb.authStore.clear(); 
-            location.reload(); 
-        }
+        if (p.status !== "completed" && currentUser?.id !== p.author && !currentUser?.is_admin) return "";
 
-        // Функция toggleAuth не использовалась → либо удали, либо реализуй регистрацию
-        function toggleAuth(showRegister) {
-            // Если захочешь добавить регистрацию — здесь можно расширить
-            alert("Registreerumine pole veel implementeeritud.");
-        }
+        let cls = "card post";
+        if (author?.is_admin) cls += " is-admin-post";
+        else if (author?.is_pro) cls += " is-vip";
 
-        window.onload = init;
-    </script>
+        return `
+        <div class="${cls}">
+            <div class="vote-section">
+                <button onclick="vote('${p.id}')"
+                    ${!currentUser || votedPosts.includes(p.id) ? "disabled" : ""}>
+                    ▲
+                </button>
+                <div class="vote-count">${p.votes}</div>
+            </div>
+
+            <div>
+                <div>
+                    <span class="status-badge ${p.status === 'completed' ? 'status-completed':'status-review'}">
+                        ${p.status}
+                    </span>
+                </div>
+
+                <h3>${p.title}</h3>
+                <p>${p.description}</p>
+
+                <div>
+                    ${author?.email || "Anon"}
+                    ${author?.is_admin ? '<span class="admin-badge">ADMIN</span>' : ''}
+                    ${author?.is_pro ? '<span class="vip-badge">VIP</span>' : ''}
+                </div>
+            </div>
+        </div>
+        `;
+    }).join("");
+}
+
+async function createPost() {
+    await pb.collection("posts").create({
+        title: title.value,
+        description: desc.value,
+        votes: 0,
+        status: "under-review",
+        author: currentUser.id
+    });
+
+    location.reload();
+}
+
+async function vote(id) {
+    if (votedPosts.includes(id)) {
+        alert("Ты уже голосовал!");
+        return;
+    }
+
+    await pb.collection("votes").create({
+        user: currentUser.id,
+        post: id
+    });
+
+    await pb.collection("posts").update(id, {
+        "votes+": 1
+    });
+
+    loadVotes();
+    loadPosts();
+}
+</script>
+
 </body>
 </html>
