@@ -20,7 +20,7 @@ body { font-family: system-ui, sans-serif; max-width:900px; margin:0 auto; paddi
 .post { display:flex; gap:16px; padding-left:12px; border-left:5px solid var(--primary); }
 .post.under-review { border-left-color:#6c757d; background:#fffef5; }
 .post.completed { border-left-color:var(--success); }
-.post.rejected { border-left-color:var(--danger); opacity:0.8; }
+.post.rejected { border-left-color:var(--danger); opacity:0.75; background:#f8d7da; }
 .vote-area { text-align:center; min-width:60px; }
 .vote-btn { font-size:1.6rem; padding:2px 10px; cursor:pointer; }
 .up.active { color:var(--success); font-weight:bold; }
@@ -35,6 +35,11 @@ body { font-family: system-ui, sans-serif; max-width:900px; margin:0 auto; paddi
 .danger { background:var(--danger); color:white; }
 .comment { background:var(--light); padding:10px; margin:8px 0; border-radius:8px; }
 .comment-form { display:flex; gap:8px; margin-top:12px; }
+button { padding:6px 12px; border:none; border-radius:6px; cursor:pointer; }
+button.primary { background:var(--primary); color:white; }
+button.success { background:var(--success); color:white; }
+button.danger { background:var(--danger); color:white; }
+button.outline { border:1px solid #ccc; background:white; }
 #errorBox { background:#ffebee; color:#c62828; padding:16px; margin:16px 0; border-radius:8px; border-left:5px solid #c62828; display:none; }
 </style>
 </head>
@@ -64,7 +69,7 @@ body { font-family: system-ui, sans-serif; max-width:900px; margin:0 auto; paddi
 
 <script>
 const pb = new PocketBase("http://pocketbase-hv4bvovfn86uwdafxs7d7p1s.176.112.158.3.sslip.io");
-pb.autoCancellation(false);  // ← КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: отключаем автоотмену дубликатов
+pb.autoCancellation(false); // предотвращает ошибку "autocancelled"
 
 let currentUser = null;
 let myVotes = new Set();
@@ -128,9 +133,26 @@ async function loadMyVotes() {
 async function loadPosts() {
     document.getElementById("errorBox").style.display = "none";
     try {
-        let filter = currentUser?.is_admin ? "" : currentUser ? `status = "completed" || author = "${currentUser.id}"` : 'status = "completed"';
-        const postsData = await pb.collection("posts").getFullList({ sort: "-created", expand: "author", filter });
-        const commentsData = await pb.collection("comments").getFullList({ sort: "created", expand: "user" });
+        // Админ видит всё, обычный — completed + свои, гость — только completed
+        let filter = "";
+        if (!currentUser) {
+            filter = 'status = "completed"';
+        } else if (!currentUser.is_admin) {
+            filter = `status = "completed" || author = "${currentUser.id}"`;
+        }
+        // для админа filter остаётся пустым → видит все посты
+
+        const postsData = await pb.collection("posts").getFullList({
+            sort: "-created",
+            expand: "author",
+            filter
+        });
+
+        const commentsData = await pb.collection("comments").getFullList({
+            sort: "created",
+            expand: "user"
+        });
+
         const commentsByPost = {};
         commentsData.forEach(c => {
             if (!commentsByPost[c.post]) commentsByPost[c.post] = [];
@@ -139,11 +161,17 @@ async function loadPosts() {
 
         document.getElementById("posts").innerHTML = postsData.map(post => {
             const author = post.expand?.author || {};
+            const isAdmin = currentUser?.is_admin || false;
             const myVote = [...myVotes].find(v => v.startsWith(post.id + ":"))?.split(":")[1] || null;
             const score = (post.upvotes || 0) - (post.downvotes || 0);
             let cls = `card post ${post.status}`;
             if (author.is_admin) cls += " is-admin";
             else if (author.is_pro) cls += " is-vip";
+
+            let statusBadge = "";
+            if (post.status === "under-review") statusBadge = '<span class="badge pending">на модерации</span>';
+            if (post.status === "completed")    statusBadge = '<span class="badge success">реализовано</span>';
+            if (post.status === "rejected")     statusBadge = '<span class="badge danger">отклонено</span>';
 
             return `
             <div class="${cls}">
@@ -155,9 +183,24 @@ async function loadPosts() {
                 <div style="flex:1;">
                     <h3>${post.title}</h3>
                     <p>${post.description}</p>
-                    <div class="meta">${author.email || "аноним"} · ${new Date(post.created).toLocaleDateString("ru")}</div>
+                    <div class="meta">${author.email || "аноним"} ${statusBadge} · ${new Date(post.created).toLocaleDateString("ru")}</div>
+                    
+                    ${isAdmin ? `
+                    <div style="margin:12px 0;">
+                        ${post.status === "under-review" ? `
+                            <button class="success" onclick="moderate('${post.id}', 'completed')">Завершено ✓</button>
+                            <button class="danger" onclick="moderate('${post.id}', 'rejected')">Отклонить ✗</button>
+                        ` : ''}
+                        ${post.status === "rejected" ? `
+                            <button class="success outline" onclick="moderate('${post.id}', 'under-review')">Вернуть на модерацию</button>
+                        ` : ''}
+                        <button class="danger outline" onclick="deletePost('${post.id}')">Удалить</button>
+                    </div>` : ""}
+                    
                     <div style="margin-top:16px;">
-                        ${(commentsByPost[post.id] || []).map(c => `<div class="comment"><strong>${c.expand?.user?.email || "аноним"}</strong><p>${c.text}</p></div>`).join("")}
+                        ${(commentsByPost[post.id] || []).map(c => `
+                            <div class="comment"><strong>${c.expand?.user?.email || "аноним"}</strong><p>${c.text}</p></div>
+                        `).join("") || "<small>Комментариев нет</small>"}
                         ${currentUser ? `<form class="comment-form" onsubmit="addComment(event, '${post.id}');return false;">
                             <input type="text" id="c-${post.id}" placeholder="Комментарий..." required>
                             <button class="primary">Отправить</button></form>` : ""}
@@ -167,11 +210,7 @@ async function loadPosts() {
         }).join("") || "<p>Постов нет</p>";
     } catch (err) {
         console.error(err);
-        let msg = "Ошибка загрузки";
-        if (err.isAbort) msg = "Запрос отменён (авто-отмена)";
-        else if (err.status === 403) msg = "403: Проверьте API Rules";
-        else if (err.status === 0) msg = "Клиентская ошибка (0) — попробуйте обновить";
-        document.getElementById("errorBox").innerHTML = msg + "<br>" + (err.message || "");
+        document.getElementById("errorBox").innerHTML = "Ошибка загрузки: " + (err.message || "неизвестная ошибка");
         document.getElementById("errorBox").style.display = "block";
     }
 }
@@ -190,9 +229,7 @@ async function castVote(postId, direction) {
                 `user="${currentUser.id}" && post="${postId}" && direction=${opp}`
             );
             await pb.collection("votes").delete(oppRec.id);
-        } catch (e) {
-            if (e.status !== 404) throw e;
-        }
+        } catch (e) { if (e.status !== 404) throw e; }
 
         const hasThis = myVotes.has(`${postId}:${direction}`);
         if (hasThis) {
@@ -219,17 +256,29 @@ async function castVote(postId, direction) {
         await loadMyVotes();
         await loadPosts();
     } catch (err) {
-        let msg = "Ошибка голосования";
-        if (err.isAbort) msg = "Запрос отменён";
-        if (err.status === 400) msg = "Уже голосовали или ошибка";
-        if (err.status === 403) msg = "Нет прав";
-        alert(msg);
+        alert("Ошибка голосования: " + (err.message || ""));
     }
+}
+
+async function moderate(id, status) {
+    if (!confirm(`Сменить статус на "${status}"?`)) return;
+    try {
+        await pb.collection("posts").update(id, { status });
+        loadPosts();
+    } catch (e) { alert("Ошибка модерации"); }
+}
+
+async function deletePost(id) {
+    if (!confirm("Удалить пост навсегда?")) return;
+    try {
+        await pb.collection("posts").delete(id);
+        loadPosts();
+    } catch (e) { alert("Ошибка удаления"); }
 }
 
 async function addComment(e, postId) {
     e.preventDefault();
-    const text = document.getElementById(`c-${postId}`).value.trim();
+    const text = document.getElementById(`c-${post.id}`).value.trim();
     if (!text) return;
     try {
         await pb.collection("comments").create({ post: postId, user: currentUser.id, text });
@@ -244,7 +293,8 @@ async function createPost() {
     if (!title) return alert("Заголовок обязателен");
     try {
         await pb.collection("posts").create({
-            title, description: desc, author: currentUser.id, status: "under-review", upvotes: 0, downvotes: 0
+            title, description: desc, author: currentUser.id,
+            status: "under-review", upvotes: 0, downvotes: 0
         });
         document.getElementById("title").value = "";
         document.getElementById("desc").value = "";
