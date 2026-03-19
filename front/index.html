@@ -64,6 +64,8 @@ body { font-family: system-ui, sans-serif; max-width:900px; margin:0 auto; paddi
 
 <script>
 const pb = new PocketBase("http://pocketbase-hv4bvovfn86uwdafxs7d7p1s.176.112.158.3.sslip.io");
+pb.autoCancellation(false);  // ← КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: отключаем автоотмену дубликатов
+
 let currentUser = null;
 let myVotes = new Set();
 
@@ -82,7 +84,7 @@ function renderAuth() {
     if (currentUser) {
         let badges = '';
         if (currentUser.is_admin) badges += '<span class="badge admin">ADMIN</span>';
-        if (currentUser.is_pro)  badges += '<span class="badge vip">VIP</span>';
+        if (currentUser.is_pro) badges += '<span class="badge vip">VIP</span>';
         el.innerHTML = `${currentUser.email} ${badges} <button onclick="logout()">Выйти</button>`;
         document.getElementById("newPost").style.display = "block";
     } else {
@@ -165,26 +167,24 @@ async function loadPosts() {
         }).join("") || "<p>Постов нет</p>";
     } catch (err) {
         console.error(err);
-        let msg = err.status === 403 ? "403: Проверьте API Rules" : err.message;
-        document.getElementById("errorBox").innerHTML = msg;
+        let msg = "Ошибка загрузки";
+        if (err.isAbort) msg = "Запрос отменён (авто-отмена)";
+        else if (err.status === 403) msg = "403: Проверьте API Rules";
+        else if (err.status === 0) msg = "Клиентская ошибка (0) — попробуйте обновить";
+        document.getElementById("errorBox").innerHTML = msg + "<br>" + (err.message || "");
         document.getElementById("errorBox").style.display = "block";
     }
 }
 
 async function castVote(postId, direction) {
-    if (!currentUser) return alert("Войдите, чтобы голосовать");
+    if (!currentUser) return alert("Войдите");
     direction = Number(direction);
 
     try {
-        // Проверка: нельзя голосовать за свой пост
         const post = await pb.collection("posts").getOne(postId, { expand: "author" });
-        if (post.author === currentUser.id) {
-            return alert("Нельзя голосовать за свой собственный пост");
-        }
+        if (post.author === currentUser.id) return alert("Нельзя голосовать за свой пост");
 
         const opp = direction === 1 ? -1 : 1;
-
-        // Удаляем противоположный голос, если был
         try {
             const oppRec = await pb.collection("votes").getFirstListItem(
                 `user="${currentUser.id}" && post="${postId}" && direction=${opp}`
@@ -194,28 +194,24 @@ async function castVote(postId, direction) {
             if (e.status !== 404) throw e;
         }
 
-        const thisKey = `${postId}:${direction}`;
-        const hasThis = myVotes.has(thisKey);
-
+        const hasThis = myVotes.has(`${postId}:${direction}`);
         if (hasThis) {
-            // снимаем голос
             const rec = await pb.collection("votes").getFirstListItem(
                 `user="${currentUser.id}" && post="${postId}" && direction=${direction}`
             );
             await pb.collection("votes").delete(rec.id);
             await pb.collection("posts").update(postId, {
-                upvotes:   direction === 1 ? pb.raw("-1") : 0,
+                upvotes: direction === 1 ? pb.raw("-1") : 0,
                 downvotes: direction === -1 ? pb.raw("-1") : 0
             });
         } else {
-            // ставим новый голос
             await pb.collection("votes").create({
                 user: currentUser.id,
                 post: postId,
                 direction: direction
             });
             await pb.collection("posts").update(postId, {
-                upvotes:   direction === 1 ? pb.raw("+1") : 0,
+                upvotes: direction === 1 ? pb.raw("+1") : 0,
                 downvotes: direction === -1 ? pb.raw("+1") : 0
             });
         }
@@ -223,10 +219,10 @@ async function castVote(postId, direction) {
         await loadMyVotes();
         await loadPosts();
     } catch (err) {
-        console.error("castVote error:", err);
         let msg = "Ошибка голосования";
-        if (err.status === 400) msg = "Уже голосовали или ошибка данных";
-        if (err.status === 403) msg = "Нет прав (403) — проверьте Create rule в votes";
+        if (err.isAbort) msg = "Запрос отменён";
+        if (err.status === 400) msg = "Уже голосовали или ошибка";
+        if (err.status === 403) msg = "Нет прав";
         alert(msg);
     }
 }
@@ -248,8 +244,7 @@ async function createPost() {
     if (!title) return alert("Заголовок обязателен");
     try {
         await pb.collection("posts").create({
-            title, description: desc, author: currentUser.id,
-            status: "under-review", upvotes: 0, downvotes: 0
+            title, description: desc, author: currentUser.id, status: "under-review", upvotes: 0, downvotes: 0
         });
         document.getElementById("title").value = "";
         document.getElementById("desc").value = "";
