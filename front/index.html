@@ -39,16 +39,16 @@ body {
 .post.is-vip { border-left-color:var(--vip); }
 .post.is-admin { border-left-color:var(--admin); }
 
-.vote {
-    text-align:center;
-}
+.vote { text-align:center; }
 
-.vote button {
+.vip { background:var(--vip); padding:2px 6px; margin-left:5px; }
+.admin { background:var(--admin); color:white; padding:2px 6px; margin-left:5px; }
+
+button {
+    margin-top:5px;
     padding:5px 10px;
+    cursor:pointer;
 }
-
-.vip { background:var(--vip); padding:2px 6px; }
-.admin { background:var(--admin); color:white; padding:2px 6px; }
 </style>
 </head>
 
@@ -68,7 +68,7 @@ body {
 
 <div id="newPost" class="card" style="display:none;">
     <input id="title" placeholder="Title">
-    <textarea id="desc"></textarea>
+    <textarea id="desc" placeholder="Description"></textarea>
     <button onclick="createPost()">Post</button>
 </div>
 
@@ -119,7 +119,9 @@ async function register(){
     await pb.collection("users").create({
         email,
         password: pass,
-        passwordConfirm: pass
+        passwordConfirm: pass,
+        is_pro: false,
+        is_admin: false
     });
 
     await login();
@@ -147,8 +149,11 @@ async function loadPosts(){
     posts.innerHTML = data.map(p => {
 
         const a = p.expand?.author;
+        const isOwner = user?.id === p.author;
+        const isAdmin = user?.is_admin;
+        const isVip = user?.is_pro;
 
-        if(p.status !== "completed" && user?.id !== p.author && !user?.is_admin) return "";
+        if(p.status !== "completed" && !isOwner && !isAdmin) return "";
 
         let cls = "card post";
         if(a?.is_admin) cls += " is-admin";
@@ -164,7 +169,7 @@ async function loadPosts(){
                 <div>${p.votes}</div>
             </div>
 
-            <div>
+            <div style="flex:1;">
                 <h3>${p.title}</h3>
                 <p>${p.description}</p>
 
@@ -173,6 +178,19 @@ async function loadPosts(){
                     ${a?.is_admin ? '<span class="admin">ADMIN</span>' : ''}
                     ${a?.is_pro ? '<span class="vip">VIP</span>' : ''}
                 </small>
+
+                <br>
+
+                ${ (isAdmin || (isVip && isOwner)) ? `
+                    <button onclick="editPost('${p.id}', \`${p.title}\`, \`${p.description}\`)">
+                        Edit
+                    </button>
+                ` : ''}
+
+                ${ isAdmin ? `
+                    <button onclick="deletePost('${p.id}')">Delete</button>
+                    <button onclick="toggleVip('${a.id}', ${a?.is_pro})">VIP</button>
+                ` : ''}
             </div>
         </div>
         `;
@@ -207,6 +225,35 @@ async function vote(id){
     });
 
     loadVotes();
+    loadPosts();
+}
+
+async function editPost(id, oldTitle, oldDesc){
+    const title = prompt("New title:", oldTitle);
+    const desc = prompt("New description:", oldDesc);
+
+    if(!title) return;
+
+    await pb.collection("posts").update(id, {
+        title,
+        description: desc
+    });
+
+    loadPosts();
+}
+
+async function deletePost(id){
+    if(!confirm("Удалить пост?")) return;
+
+    await pb.collection("posts").delete(id);
+    loadPosts();
+}
+
+async function toggleVip(userId, current){
+    await pb.collection("users").update(userId, {
+        is_pro: !current
+    });
+
     loadPosts();
 }
 </script>
