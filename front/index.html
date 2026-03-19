@@ -53,7 +53,7 @@ button.outline { border:1px solid #ccc; background:white; }
 </div>
 
 <div id="vip-promo" class="card vip-promo" style="display:none;">
-    <strong>Saa VIP-ks!</strong> Sinu ettepanekud tõstetakse esile, saad prioriteeti ja erilise märgistuse.<br><br>
+    <strong>Saa VIP-ks!</strong> Sinu ettepanekud tõstetakse esile.<br><br>
     <a href="https://buy.stripe.com/test_aFacN53uE0TNgqoeEHe7m02"><button style="background:var(--vip); color:black; padding:10px 20px;">Osta VIP (15€)</button></a>
 </div>
 
@@ -82,14 +82,13 @@ let currentUser = null;
 let myVotes = new Set();
 
 window.onload = async () => {
-    // Stripe makse edukuse käsitlemine (kui tuleb tagasi ?payment=success)
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
         try {
             await pb.collection('users').update(pb.authStore.model.id, { "is_pro": true });
             await pb.collection('users').authRefresh();
             window.history.replaceState({}, document.title, "/");
-        } catch(e) { console.error("Stripe update error:", e); }
+        } catch(e) { console.error(e); }
     }
 
     currentUser = pb.authStore.model;
@@ -154,7 +153,10 @@ async function loadPosts() {
         const postsData = await pb.collection("posts").getFullList({sort:"-created", expand:"author", filter});
         const commentsData = await pb.collection("comments").getFullList({sort:"created", expand:"user"});
         const commentsByPost = {};
-        commentsData.forEach(c => { if(!commentsByPost[c.post]) commentsByPost[c.post]=[]; commentsByPost[c.post].push(c); });
+        commentsData.forEach(c => { 
+            if(!commentsByPost[c.post]) commentsByPost[c.post]=[]; 
+            commentsByPost[c.post].push(c); 
+        });
 
         document.getElementById("posts").innerHTML = postsData.map(post => {
             const author = post.expand?.author || {};
@@ -205,33 +207,42 @@ async function loadPosts() {
     }
 }
 
+/* === ИСПРАВЛЕННАЯ ФУНКЦИЯ ГОЛОСОВАНИЯ (решает 400 Bad Request) === */
 async function castVote(postId, direction) {
     if (!currentUser) return alert("Logi sisse");
     direction = Number(direction);
+
     try {
         const post = await pb.collection("posts").getOne(postId, {expand:"author"});
         if (post.author === currentUser.id) return alert("Ei saa hääletada oma ettepaneku poolt");
-        const opp = direction === 1 ? -1 : 1;
-        try {
-            const oppRec = await pb.collection("votes").getFirstListItem(`user="${currentUser.id}" && post="${postId}" && direction=${opp}`);
-            await pb.collection("votes").delete(oppRec.id);
-        } catch(e){ if(e.status !== 404) throw e; }
-        const hasThis = myVotes.has(`${postId}:${direction}`);
-        if (hasThis) {
-            const rec = await pb.collection("votes").getFirstListItem(`user="${currentUser.id}" && post="${postId}" && direction=${direction}`);
-            await pb.collection("votes").delete(rec.id);
-            await pb.collection("posts").update(postId, {upvotes: direction===1?pb.raw("-1"):0, downvotes: direction===-1?pb.raw("-1"):0});
-        } else {
-            await pb.collection("votes").create({user:currentUser.id, post:postId, direction});
-            await pb.collection("posts").update(postId, {upvotes: direction===1?pb.raw("+1"):0, downvotes: direction===-1?pb.raw("+1"):0});
+
+        // Удаляем ВСЕ старые голоса пользователя за этот пост
+        const existingVotes = await pb.collection("votes").getFullList({
+            filter: `user="${currentUser.id}" && post="${postId}"`
+        });
+        for (const vote of existingVotes) {
+            await pb.collection("votes").delete(vote.id);
         }
+
+        // Создаём новый голос
+        await pb.collection("votes").create({
+            user: currentUser.id, 
+            post: postId, 
+            direction: direction
+        });
+
+        // Обновляем счётчики
+        const up = direction === 1 ? pb.raw("+1") : 0;
+        const down = direction === -1 ? pb.raw("+1") : 0;
+        await pb.collection("posts").update(postId, {upvotes: up, downvotes: down});
+
         await loadMyVotes();
         await loadPosts();
     } catch (err) {
         console.error("castVote error:", err);
         let msg = "Viga hääletamisel";
-        if (err.status === 400) msg = "400: Kontrolli votes Create rule (peab olema user = @request.auth.id)";
-        if (err.status === 403) msg = "Puuduvad õigused hääle loomiseks";
+        if (err.status === 400) msg = "400: Kontrolli API Rules (votes ja posts)";
+        if (err.status === 403) msg = "Puuduvad õigused hääletamiseks";
         alert(msg);
     }
 }
@@ -267,7 +278,6 @@ async function createPost() {
     loadPosts();
 }
 
-// Lisatud funktsioon VIP staatuse vahetamiseks (adminile)
 async function toggleVip(userId, isCurrentlyPro) {
     if (!confirm(isCurrentlyPro ? "Võtta VIP staatus ära?" : "Anna VIP staatus?")) return;
     try {
