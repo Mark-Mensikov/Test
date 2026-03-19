@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tagasiside Portaal PRO</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pocketbase/0.22.1/pocketbase.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pocketbase/0.25.2/pocketbase.umd.js"></script>
 <style>
 :root {
     --primary: #007bff;
@@ -207,7 +207,6 @@ async function loadPosts() {
     }
 }
 
-/* === ИСПРАВЛЕННАЯ ФУНКЦИЯ ГОЛОСОВАНИЯ (решает 400 Bad Request) === */
 async function castVote(postId, direction) {
     if (!currentUser) return alert("Logi sisse");
     direction = Number(direction);
@@ -231,10 +230,14 @@ async function castVote(postId, direction) {
             direction: direction
         });
 
-        // Обновляем счётчики
-        const up = direction === 1 ? pb.raw("+1") : 0;
-        const down = direction === -1 ? pb.raw("+1") : 0;
-        await pb.collection("posts").update(postId, {upvotes: up, downvotes: down});
+        // Обновляем счётчики (современный синтаксис без pb.raw)
+        const updateData = {};
+        if (direction === 1) {
+            updateData["upvotes+"] = 1;
+        } else {
+            updateData["downvotes+"] = 1;
+        }
+        await pb.collection("posts").update(postId, updateData);
 
         await loadMyVotes();
         await loadPosts();
@@ -242,7 +245,7 @@ async function castVote(postId, direction) {
         console.error("castVote error:", err);
         let msg = "Viga hääletamisel";
         if (err.status === 400) msg = "400: Kontrolli API Rules (votes ja posts)";
-        if (err.status === 403) msg = "Puuduvad õigused hääletamiseks";
+        if (err.status === 403) msg = "Puuduvad õigused";
         alert(msg);
     }
 }
