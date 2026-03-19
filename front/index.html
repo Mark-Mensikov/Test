@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="et">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Feedback Board PRO</title>
+<title>Tagasiside Portaal PRO</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pocketbase/0.22.1/pocketbase.umd.js"></script>
 <style>
 :root {
@@ -21,6 +21,8 @@ body { font-family: system-ui, sans-serif; max-width:900px; margin:0 auto; paddi
 .post.under-review { border-left-color:#6c757d; background:#fffef5; }
 .post.completed { border-left-color:var(--success); }
 .post.rejected { border-left-color:var(--danger); opacity:0.75; background:#f8d7da; }
+.post.is-vip { border-left-color:var(--vip); background:#fffdf0; }
+.post.is-admin-post { border-left-color:var(--admin); background:#fff5f5; border-left-width:10px; }
 .vote-area { text-align:center; min-width:60px; }
 .vote-btn { font-size:1.6rem; padding:2px 10px; cursor:pointer; }
 .up.active { color:var(--success); font-weight:bold; }
@@ -41,40 +43,55 @@ button.success { background:var(--success); color:white; }
 button.danger { background:var(--danger); color:white; }
 button.outline { border:1px solid #ccc; background:white; }
 #errorBox { background:#ffebee; color:#c62828; padding:16px; margin:16px 0; border-radius:8px; border-left:5px solid #c62828; display:none; }
+.vip-promo { background:#fff9c4; border:1px solid #ffe082; }
 </style>
 </head>
 <body>
-
 <div class="card">
-    <h2>💡 Feedback Board PRO</h2>
+    <h2>💡 Ettepanekud</h2>
     <div id="auth"></div>
+</div>
+
+<div id="vip-promo" class="card vip-promo" style="display:none;">
+    <strong>Saa VIP-ks!</strong> Sinu ettepanekud tõstetakse esile, saad prioriteeti ja erilise märgistuse.<br><br>
+    <a href="https://buy.stripe.com/test_aFacN53uE0TNgqoeEHe7m02"><button style="background:var(--vip); color:black; padding:10px 20px;">Osta VIP (15€)</button></a>
 </div>
 
 <div id="errorBox"></div>
 
 <div id="authBox" class="card" style="display:none;">
-    <input id="email" placeholder="Email" type="email">
-    <input id="password" placeholder="Пароль" type="password">
-    <button class="primary" onclick="login()">Войти</button>
-    <button onclick="register()">Регистрация</button>
+    <input id="email" placeholder="E-mail" type="email">
+    <input id="password" placeholder="Parool" type="password">
+    <button class="primary" onclick="login()">Logi sisse</button>
+    <button onclick="register()">Registreeri</button>
 </div>
 
 <div id="newPost" class="card" style="display:none;">
-    <input id="title" placeholder="Заголовок">
-    <textarea id="desc" placeholder="Описание..."></textarea>
-    <button class="primary" onclick="createPost()">Отправить</button>
+    <input id="title" placeholder="Pealkiri">
+    <textarea id="desc" placeholder="Kirjeldus..."></textarea>
+    <button class="primary" onclick="createPost()">Saada ettepanek</button>
 </div>
 
 <div id="posts"></div>
 
 <script>
 const pb = new PocketBase("http://pocketbase-hv4bvovfn86uwdafxs7d7p1s.176.112.158.3.sslip.io");
-pb.autoCancellation(false); // отключаем автоотмену запросов
+pb.autoCancellation(false);
 
 let currentUser = null;
 let myVotes = new Set();
 
 window.onload = async () => {
+    // Stripe makse edukuse käsitlemine (kui tuleb tagasi ?payment=success)
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
+        try {
+            await pb.collection('users').update(pb.authStore.model.id, { "is_pro": true });
+            await pb.collection('users').authRefresh();
+            window.history.replaceState({}, document.title, "/");
+        } catch(e) { console.error("Stripe update error:", e); }
+    }
+
     currentUser = pb.authStore.model;
     renderAuth();
     if (currentUser) await loadMyVotes().catch(console.error);
@@ -86,240 +103,177 @@ window.onload = async () => {
 
 function renderAuth() {
     const el = document.getElementById("auth");
+    const vipPromo = document.getElementById("vip-promo");
     if (currentUser) {
         let badges = '';
         if (currentUser.is_admin) badges += '<span class="badge admin">ADMIN</span>';
         if (currentUser.is_pro) badges += '<span class="badge vip">VIP</span>';
-        el.innerHTML = `${currentUser.email} ${badges} <button onclick="logout()">Выйти</button>`;
+        el.innerHTML = `${currentUser.email} ${badges} <button onclick="logout()">Logi välja</button>`;
         document.getElementById("newPost").style.display = "block";
+        vipPromo.style.display = (currentUser.is_pro || currentUser.is_admin) ? 'none' : 'block';
     } else {
-        el.innerHTML = `<button onclick="document.getElementById('authBox').style.display='block'">Войти</button>`;
+        el.innerHTML = `<button onclick="document.getElementById('authBox').style.display='block'">Logi sisse / Registreeri</button>`;
+        vipPromo.style.display = 'none';
     }
 }
 
 async function login() {
     try {
-        await pb.collection("users").authWithPassword(
-            document.getElementById("email").value.trim(),
-            document.getElementById("password").value
-        );
+        await pb.collection("users").authWithPassword(document.getElementById("email").value.trim(), document.getElementById("password").value);
         location.reload();
-    } catch (e) { alert("Ошибка входа"); }
+    } catch(e){ alert("Sisselogimine ebaõnnestus"); }
 }
 
 async function register() {
     try {
         const email = document.getElementById("email").value.trim();
         const pass = document.getElementById("password").value;
-        await pb.collection("users").create({ email, password: pass, passwordConfirm: pass });
+        await pb.collection("users").create({email, password:pass, passwordConfirm:pass});
         await login();
-    } catch (e) { alert("Ошибка регистрации"); }
+    } catch(e){ alert("Registreerimine ebaõnnestus"); }
 }
 
-function logout() { pb.authStore.clear(); location.reload(); }
+function logout() {
+    pb.authStore.clear();
+    location.reload();
+}
 
 async function loadMyVotes() {
     if (!currentUser) return;
-    try {
-        const records = await pb.collection("votes").getFullList({
-            filter: `user = "${currentUser.id}"`,
-            fields: "post,direction"
-        });
-        myVotes = new Set(records.map(r => `${r.post}:${r.direction}`));
-        console.log("Голоса:", myVotes.size);
-    } catch (e) { console.error(e); }
+    const records = await pb.collection("votes").getFullList({filter: `user="${currentUser.id}"`, fields:"post,direction"});
+    myVotes = new Set(records.map(r => `${r.post}:${r.direction}`));
 }
 
 async function loadPosts() {
     document.getElementById("errorBox").style.display = "none";
     try {
-        // Админ видит ВСЕ посты, независимо от статуса
-        // Обычный пользователь видит completed + свои
-        // Гость — только completed
         let filter = "";
-        if (!currentUser) {
-            filter = 'status = "completed"';
-        } else if (!currentUser.is_admin) {
-            filter = `status = "completed" || author = "${currentUser.id}"`;
-        }
-        // для админа filter остаётся "" → видит всё
+        if (!currentUser) filter = 'status = "completed"';
+        else if (!currentUser.is_admin) filter = `status = "completed" || author = "${currentUser.id}"`;
 
-        const postsData = await pb.collection("posts").getFullList({
-            sort: "-created",
-            expand: "author",
-            filter
-        });
-
-        const commentsData = await pb.collection("comments").getFullList({
-            sort: "created",
-            expand: "user"
-        });
-
+        const postsData = await pb.collection("posts").getFullList({sort:"-created", expand:"author", filter});
+        const commentsData = await pb.collection("comments").getFullList({sort:"created", expand:"user"});
         const commentsByPost = {};
-        commentsData.forEach(c => {
-            if (!commentsByPost[c.post]) commentsByPost[c.post] = [];
-            commentsByPost[c.post].push(c);
-        });
+        commentsData.forEach(c => { if(!commentsByPost[c.post]) commentsByPost[c.post]=[]; commentsByPost[c.post].push(c); });
 
         document.getElementById("posts").innerHTML = postsData.map(post => {
             const author = post.expand?.author || {};
             const isAdmin = currentUser?.is_admin || false;
-            const myVote = [...myVotes].find(v => v.startsWith(post.id + ":"))?.split(":")[1] || null;
-            const score = (post.upvotes || 0) - (post.downvotes || 0);
-            let cls = `card post ${post.status}`;
-            if (author.is_admin) cls += " is-admin";
-            else if (author.is_pro) cls += " is-vip";
+            const myVote = [...myVotes].find(v=>v.startsWith(post.id+":"))?.split(":")[1] || null;
+            const score = (post.upvotes||0) - (post.downvotes||0);
 
-            let statusBadge = "";
-            if (post.status === "under-review") statusBadge = '<span class="badge pending">на модерации</span>';
-            if (post.status === "completed")    statusBadge = '<span class="badge success">реализовано</span>';
-            if (post.status === "rejected")     statusBadge = '<span class="badge danger">отклонено</span>';
+            let cls = `card post ${post.status}`;
+            if(author.is_admin) cls += " is-admin-post";
+            else if(author.is_pro) cls += " is-vip";
+
+            let badge = "";
+            if(post.status==="under-review") badge = '<span class="badge pending">Ülevaatusel</span>';
+            if(post.status==="completed") badge = '<span class="badge success">Teostatud</span>';
+            if(post.status==="rejected") badge = '<span class="badge danger">Tagasi lükatud</span>';
 
             return `
             <div class="${cls}">
                 <div class="vote-area">
-                    <button class="vote-btn up ${myVote === '1' ? 'active' : ''}" onclick="castVote('${post.id}', 1)">▲</button>
-                    <div class="score">${score > 0 ? '+' + score : score}</div>
-                    <button class="vote-btn down ${myVote === '-1' ? 'active' : ''}" onclick="castVote('${post.id}', -1)">▼</button>
+                    <button class="vote-btn up ${myVote==='1'?'active':''}" onclick="castVote('${post.id}',1)">▲</button>
+                    <div class="score">${score>0?'+'+score:score}</div>
+                    <button class="vote-btn down ${myVote==='-1'?'active':''}" onclick="castVote('${post.id}',-1)">▼</button>
                 </div>
-                <div style="flex:1;">
+                <div style="flex:1">
                     <h3>${post.title}</h3>
                     <p>${post.description}</p>
-                    <div class="meta">${author.email || "аноним"} ${statusBadge} · ${new Date(post.created).toLocaleDateString("ru")}</div>
-                    
+                    <div class="meta">${author.email||"Anonüümne"} ${badge}</div>
+                   
                     ${isAdmin ? `
-                    <div style="margin:12px 0; display:flex; gap:8px; flex-wrap:wrap;">
-                        ${post.status === "under-review" ? `
-                            <button class="success" onclick="moderate('${post.id}', 'completed')">Завершено ✓</button>
-                            <button class="danger" onclick="moderate('${post.id}', 'rejected')">Отклонить ✗</button>
-                        ` : ''}
-                        ${post.status === "rejected" ? `
-                            <button class="success outline" onclick="moderate('${post.id}', 'under-review')">Вернуть на модерацию</button>
-                        ` : ''}
-                        <button class="danger outline" onclick="deletePost('${post.id}')">Удалить</button>
+                    <div style="margin:12px 0;display:flex;gap:8px;flex-wrap:wrap;">
+                        ${post.status==="under-review" ? `<button class="success" onclick="moderate('${post.id}','completed')">Teostatud ✓</button><button class="danger" onclick="moderate('${post.id}','rejected')">Lükata tagasi ✗</button>` : ''}
+                        ${post.status==="rejected" ? `<button class="success outline" onclick="moderate('${post.id}','under-review')">Tagasi ülevaatusele</button>` : ''}
+                        <button onclick="toggleVip('${post.author}', ${!!author.is_pro})" style="background:var(--vip); color:black;">${author.is_pro ? 'Võta VIP ära' : 'Anna VIP'}</button>
+                        <button class="danger outline" onclick="deletePost('${post.id}')">Kustuta</button>
                     </div>` : ""}
-                    
+                   
                     <div style="margin-top:16px;">
-                        ${(commentsByPost[post.id] || []).map(c => `
-                            <div class="comment"><strong>${c.expand?.user?.email || "аноним"}</strong><p>${c.text}</p></div>
-                        `).join("") || "<small>Комментариев нет</small>"}
-                        ${currentUser ? `<form class="comment-form" onsubmit="addComment(event, '${post.id}');return false;">
-                            <input type="text" id="c-${post.id}" placeholder="Комментарий..." required>
-                            <button class="primary">Отправить</button></form>` : ""}
+                        ${(commentsByPost[post.id]||[]).map(c=>`<div class="comment"><strong>${c.expand?.user?.email||"Anonüümne"}</strong><p>${c.text}</p></div>`).join("") || "<small>Kommentaare pole</small>"}
+                        ${currentUser ? `<form class="comment-form" onsubmit="addComment(event,'${post.id}');return false;"><input type="text" id="c-${post.id}" placeholder="Kommentaar..." required><button class="primary">Saada</button></form>` : ""}
                     </div>
                 </div>
             </div>`;
-        }).join("") || "<p>Постов нет</p>";
+        }).join("") || "<p>Ettepanekuid pole</p>";
     } catch (err) {
         console.error(err);
-        let msg = err.status === 403 ? "403: Проверьте API Rules для posts" : err.message;
-        document.getElementById("errorBox").innerHTML = "Ошибка: " + msg;
+        document.getElementById("errorBox").innerHTML = "Viga: " + (err.message || "tundmatu");
         document.getElementById("errorBox").style.display = "block";
     }
 }
 
 async function castVote(postId, direction) {
-    if (!currentUser) return alert("Войдите");
+    if (!currentUser) return alert("Logi sisse");
     direction = Number(direction);
-
     try {
-        const post = await pb.collection("posts").getOne(postId, { expand: "author" });
-        if (post.author === currentUser.id) return alert("Нельзя голосовать за свой пост");
-
+        const post = await pb.collection("posts").getOne(postId, {expand:"author"});
+        if (post.author === currentUser.id) return alert("Ei saa hääletada oma ettepaneku poolt");
         const opp = direction === 1 ? -1 : 1;
         try {
-            const oppRec = await pb.collection("votes").getFirstListItem(
-                `user="${currentUser.id}" && post="${postId}" && direction=${opp}`
-            );
+            const oppRec = await pb.collection("votes").getFirstListItem(`user="${currentUser.id}" && post="${postId}" && direction=${opp}`);
             await pb.collection("votes").delete(oppRec.id);
-        } catch (e) {
-            if (e.status !== 404) throw e;
-        }
-
+        } catch(e){ if(e.status !== 404) throw e; }
         const hasThis = myVotes.has(`${postId}:${direction}`);
         if (hasThis) {
-            const rec = await pb.collection("votes").getFirstListItem(
-                `user="${currentUser.id}" && post="${postId}" && direction=${direction}`
-            );
+            const rec = await pb.collection("votes").getFirstListItem(`user="${currentUser.id}" && post="${postId}" && direction=${direction}`);
             await pb.collection("votes").delete(rec.id);
-            await pb.collection("posts").update(postId, {
-                upvotes: direction === 1 ? pb.raw("-1") : 0,
-                downvotes: direction === -1 ? pb.raw("-1") : 0
-            });
+            await pb.collection("posts").update(postId, {upvotes: direction===1?pb.raw("-1"):0, downvotes: direction===-1?pb.raw("-1"):0});
         } else {
-            await pb.collection("votes").create({
-                user: currentUser.id,
-                post: postId,
-                direction: direction
-            });
-            await pb.collection("posts").update(postId, {
-                upvotes: direction === 1 ? pb.raw("+1") : 0,
-                downvotes: direction === -1 ? pb.raw("+1") : 0
-            });
+            await pb.collection("votes").create({user:currentUser.id, post:postId, direction});
+            await pb.collection("posts").update(postId, {upvotes: direction===1?pb.raw("+1"):0, downvotes: direction===-1?pb.raw("+1"):0});
         }
-
         await loadMyVotes();
         await loadPosts();
     } catch (err) {
-        console.error("castVote full error:", err);
-        let msg = "Ошибка голосования";
-        if (err.status === 400) {
-            if (err.data?.code === "validation_not_unique") {
-                msg = "Вы уже голосовали (дубликат запрещён)";
-            } else if (err.data?.data?.direction) {
-                msg = "Неверное значение direction (должно быть 1 или -1)";
-            } else {
-                msg = "400 Bad Request: " + (err.data?.message || "проверьте Create rule и поля в votes");
-            }
-        } else if (err.status === 403) {
-            msg = "Нет прав на создание голоса — проверьте Create rule в votes";
-        }
+        console.error("castVote error:", err);
+        let msg = "Viga hääletamisel";
+        if (err.status === 400) msg = "400: Kontrolli votes Create rule (peab olema user = @request.auth.id)";
+        if (err.status === 403) msg = "Puuduvad õigused hääle loomiseks";
         alert(msg);
     }
 }
 
-
-
 async function moderate(id, status) {
-    if (!confirm(`Сменить статус на "${status}"?`)) return;
-    try {
-        await pb.collection("posts").update(id, { status });
-        loadPosts();
-    } catch (e) { alert("Ошибка модерации"); }
+    if (!confirm(`Muuta staatus "${status}"?`)) return;
+    await pb.collection("posts").update(id, {status});
+    loadPosts();
 }
 
 async function deletePost(id) {
-    if (!confirm("Удалить пост навсегда?")) return;
-    try {
-        await pb.collection("posts").delete(id);
-        loadPosts();
-    } catch (e) { alert("Ошибка удаления"); }
+    if (!confirm("Kustutada ettepanek lõplikult?")) return;
+    await pb.collection("posts").delete(id);
+    loadPosts();
 }
 
 async function addComment(e, postId) {
     e.preventDefault();
     const text = document.getElementById(`c-${postId}`).value.trim();
     if (!text) return;
-    try {
-        await pb.collection("comments").create({ post: postId, user: currentUser.id, text });
-        document.getElementById(`c-${postId}`).value = "";
-        loadPosts();
-    } catch (e) { alert("Ошибка комментария"); }
+    await pb.collection("comments").create({post:postId, user:currentUser.id, text});
+    document.getElementById(`c-${postId}`).value = "";
+    loadPosts();
 }
 
 async function createPost() {
     const title = document.getElementById("title").value.trim();
     const desc = document.getElementById("desc").value.trim();
-    if (!title) return alert("Заголовок обязателен");
+    if (!title) return alert("Pealkiri on kohustuslik");
+    await pb.collection("posts").create({title, description:desc, author:currentUser.id, status:"under-review", upvotes:0, downvotes:0});
+    document.getElementById("title").value = "";
+    document.getElementById("desc").value = "";
+    loadPosts();
+}
+
+// Lisatud funktsioon VIP staatuse vahetamiseks (adminile)
+async function toggleVip(userId, isCurrentlyPro) {
+    if (!confirm(isCurrentlyPro ? "Võtta VIP staatus ära?" : "Anna VIP staatus?")) return;
     try {
-        await pb.collection("posts").create({
-            title, description: desc, author: currentUser.id,
-            status: "under-review", upvotes: 0, downvotes: 0
-        });
-        document.getElementById("title").value = "";
-        document.getElementById("desc").value = "";
+        await pb.collection('users').update(userId, { "is_pro": !isCurrentlyPro });
         loadPosts();
-    } catch (e) { alert("Ошибка создания"); }
+    } catch(e) { alert("Viga VIP muutmisel!"); }
 }
 </script>
 </body>
