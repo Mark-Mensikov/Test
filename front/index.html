@@ -10,15 +10,13 @@
 <style>
 :root {
     --primary:#007bff;
-    --success:#28a745;
-    --danger:#dc3545;
-    --bg:#f4f7f6;
     --vip:#ffd700;
     --admin:#ff4757;
+    --bg:#f4f7f6;
 }
 
 body {
-    font-family:'Segoe UI',sans-serif;
+    font-family: Arial;
     max-width:800px;
     margin:0 auto;
     padding:20px;
@@ -27,219 +25,185 @@ body {
 
 .card {
     background:white;
-    padding:20px;
+    padding:15px;
+    margin-bottom:15px;
     border-radius:10px;
-    margin-bottom:20px;
 }
 
 .post {
     display:flex;
-    gap:20px;
+    gap:15px;
     border-left:5px solid var(--primary);
 }
 
 .post.is-vip { border-left-color:var(--vip); }
-.post.is-admin-post { border-left-color:var(--admin); }
-.post.is-rejected { opacity:0.5; }
+.post.is-admin { border-left-color:var(--admin); }
 
-.vote-section { text-align:center; }
-.vote-count { font-size:22px; font-weight:bold; }
-
-.vip-badge {
-    background:var(--vip);
-    padding:2px 6px;
-    border-radius:4px;
-    margin-left:5px;
+.vote {
+    text-align:center;
 }
 
-.admin-badge {
-    background:var(--admin);
-    color:white;
-    padding:2px 6px;
-    border-radius:4px;
-    margin-left:5px;
+.vote button {
+    padding:5px 10px;
 }
 
-.status-badge {
-    font-size:10px;
-    padding:3px 8px;
-    border-radius:10px;
-    background:#eee;
-}
-
-.status-completed { background:#d4edda; }
-.status-review { background:#fff3cd; }
-
-button {
-    padding:8px 15px;
-    border:none;
-    border-radius:6px;
-    background:var(--primary);
-    color:white;
-    cursor:pointer;
-}
+.vip { background:var(--vip); padding:2px 6px; }
+.admin { background:var(--admin); color:white; padding:2px 6px; }
 </style>
 </head>
 
 <body>
 
 <div class="card">
-    <h2>💡 Feedback System</h2>
-    <div id="auth-section"></div>
+    <h2>💡 Feedback</h2>
+    <div id="auth"></div>
 </div>
 
-<div id="auth-forms" class="card" style="display:none;">
+<div id="authBox" class="card" style="display:none;">
     <input id="login-email" placeholder="Email">
     <input id="login-pass" type="password" placeholder="Password">
     <button onclick="login()">Login</button>
     <button onclick="register()">Register</button>
 </div>
 
-<div id="new-post" class="card" style="display:none;">
+<div id="newPost" class="card" style="display:none;">
     <input id="title" placeholder="Title">
-    <textarea id="desc" placeholder="Description"></textarea>
+    <textarea id="desc"></textarea>
     <button onclick="createPost()">Post</button>
 </div>
 
 <div id="posts"></div>
 
 <script>
-const pb = new PocketBase("http://127.0.0.1:8090");
-let currentUser = null;
-let votedPosts = [];
+const pb = new PocketBase("http://pocketbase-hv4bvovfn86uwdafxs7d7p1s.176.112.158.3.sslip.io");
+
+let user = null;
+let voted = [];
 
 window.onload = async () => {
-    currentUser = pb.authStore.model;
-    updateAuthUI();
-    await loadVotes();
+    user = pb.authStore.model;
+    renderAuth();
+
+    if(user) await loadVotes();
     loadPosts();
 };
 
-function updateAuthUI() {
-    const el = document.getElementById("auth-section");
+function renderAuth(){
+    const el = document.getElementById("auth");
 
-    if (currentUser) {
+    if(user){
         el.innerHTML = `
-            ${currentUser.email}
-            ${currentUser.is_admin ? '<span class="admin-badge">ADMIN</span>' : ''}
-            ${currentUser.is_pro ? '<span class="vip-badge">VIP</span>' : ''}
+            ${user.email}
+            ${user.is_admin ? '<span class="admin">ADMIN</span>' : ''}
+            ${user.is_pro ? '<span class="vip">VIP</span>' : ''}
             <button onclick="logout()">Logout</button>
         `;
-        document.getElementById("new-post").style.display = "block";
+        newPost.style.display = "block";
     } else {
-        el.innerHTML = `<button onclick="showAuth()">Login</button>`;
+        el.innerHTML = `<button onclick="authBox.style.display='block'">Login</button>`;
     }
 }
 
-function showAuth() {
-    document.getElementById("auth-forms").style.display = "block";
-}
-
-async function login() {
+async function login(){
     await pb.collection("users").authWithPassword(
-        login-email.value,
-        login-pass.value
+        document.getElementById("login-email").value,
+        document.getElementById("login-pass").value
     );
     location.reload();
 }
 
-async function register() {
+async function register(){
+    const email = document.getElementById("login-email").value;
+    const pass = document.getElementById("login-pass").value;
+
     await pb.collection("users").create({
-        email: login-email.value,
-        password: login-pass.value,
-        passwordConfirm: login-pass.value
+        email,
+        password: pass,
+        passwordConfirm: pass
     });
+
     await login();
 }
 
-function logout() {
+function logout(){
     pb.authStore.clear();
     location.reload();
 }
 
-async function loadVotes() {
-    if (!currentUser) return;
-
-    const votes = await pb.collection("votes").getFullList({
-        filter: `user="${currentUser.id}"`
+async function loadVotes(){
+    const res = await pb.collection("votes").getFullList({
+        filter: `user="${user.id}"`
     });
 
-    votedPosts = votes.map(v => v.post);
+    voted = res.map(v => v.post);
 }
 
-async function loadPosts() {
-    const list = document.getElementById("posts");
-
-    const posts = await pb.collection("posts").getFullList({
-        sort: "-created",
-        expand: "author"
+async function loadPosts(){
+    const data = await pb.collection("posts").getFullList({
+        sort:"-created",
+        expand:"author"
     });
 
-    list.innerHTML = posts.map(p => {
-        const author = p.expand.author;
+    posts.innerHTML = data.map(p => {
 
-        if (p.status !== "completed" && currentUser?.id !== p.author && !currentUser?.is_admin) return "";
+        const a = p.expand?.author;
+
+        if(p.status !== "completed" && user?.id !== p.author && !user?.is_admin) return "";
 
         let cls = "card post";
-        if (author?.is_admin) cls += " is-admin-post";
-        else if (author?.is_pro) cls += " is-vip";
+        if(a?.is_admin) cls += " is-admin";
+        else if(a?.is_pro) cls += " is-vip";
 
         return `
         <div class="${cls}">
-            <div class="vote-section">
+            <div class="vote">
                 <button onclick="vote('${p.id}')"
-                    ${!currentUser || votedPosts.includes(p.id) ? "disabled" : ""}>
+                    ${!user || voted.includes(p.id) ? "disabled" : ""}>
                     ▲
                 </button>
-                <div class="vote-count">${p.votes}</div>
+                <div>${p.votes}</div>
             </div>
 
             <div>
-                <div>
-                    <span class="status-badge ${p.status === 'completed' ? 'status-completed':'status-review'}">
-                        ${p.status}
-                    </span>
-                </div>
-
                 <h3>${p.title}</h3>
                 <p>${p.description}</p>
 
-                <div>
-                    ${author?.email || "Anon"}
-                    ${author?.is_admin ? '<span class="admin-badge">ADMIN</span>' : ''}
-                    ${author?.is_pro ? '<span class="vip-badge">VIP</span>' : ''}
-                </div>
+                <small>
+                    ${a?.email || "anon"}
+                    ${a?.is_admin ? '<span class="admin">ADMIN</span>' : ''}
+                    ${a?.is_pro ? '<span class="vip">VIP</span>' : ''}
+                </small>
             </div>
         </div>
         `;
     }).join("");
 }
 
-async function createPost() {
+async function createPost(){
     await pb.collection("posts").create({
-        title: title.value,
-        description: desc.value,
-        votes: 0,
-        status: "under-review",
-        author: currentUser.id
+        title:title.value,
+        description:desc.value,
+        votes:0,
+        status:"under-review",
+        author:user.id
     });
 
     location.reload();
 }
 
-async function vote(id) {
-    if (votedPosts.includes(id)) {
-        alert("Ты уже голосовал!");
+async function vote(id){
+    if(voted.includes(id)){
+        alert("Ты уже голосовал");
         return;
     }
 
     await pb.collection("votes").create({
-        user: currentUser.id,
-        post: id
+        user:user.id,
+        post:id
     });
 
     await pb.collection("posts").update(id, {
-        "votes+": 1
+        "votes+":1
     });
 
     loadVotes();
