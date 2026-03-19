@@ -232,7 +232,9 @@ async function castVote(postId, direction) {
                 `user="${currentUser.id}" && post="${postId}" && direction=${opp}`
             );
             await pb.collection("votes").delete(oppRec.id);
-        } catch (e) { if (e.status !== 404) throw e; }
+        } catch (e) {
+            if (e.status !== 404) throw e;
+        }
 
         const hasThis = myVotes.has(`${postId}:${direction}`);
         if (hasThis) {
@@ -259,9 +261,24 @@ async function castVote(postId, direction) {
         await loadMyVotes();
         await loadPosts();
     } catch (err) {
-        alert("Ошибка голосования: " + (err.message || ""));
+        console.error("castVote full error:", err);
+        let msg = "Ошибка голосования";
+        if (err.status === 400) {
+            if (err.data?.code === "validation_not_unique") {
+                msg = "Вы уже голосовали (дубликат запрещён)";
+            } else if (err.data?.data?.direction) {
+                msg = "Неверное значение direction (должно быть 1 или -1)";
+            } else {
+                msg = "400 Bad Request: " + (err.data?.message || "проверьте Create rule и поля в votes");
+            }
+        } else if (err.status === 403) {
+            msg = "Нет прав на создание голоса — проверьте Create rule в votes";
+        }
+        alert(msg);
     }
 }
+
+
 
 async function moderate(id, status) {
     if (!confirm(`Сменить статус на "${status}"?`)) return;
