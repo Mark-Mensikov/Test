@@ -85,7 +85,7 @@ window.onload = async () => {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
         try {
-            await pb.collection('users').update(pb.authStore.model.id, { "is_pro": true });
+            await pb.collection('users').update(pb.authStore.model.id, { verified: true });
             await pb.collection('users').authRefresh();
             window.history.replaceState({}, document.title, "/");
         } catch(e) { console.error(e); }
@@ -97,7 +97,11 @@ window.onload = async () => {
     await loadPosts();
 
     pb.collection("posts").subscribe("*", () => loadPosts());
-    pb.collection("comments").subscribe("*", () => loadPosts());
+    try {
+        pb.collection("comments").subscribe("*", () => loadPosts());
+    } catch (e) {
+        console.warn("Comments subscription disabled:", e?.message || e);
+    }
 };
 
 function renderAuth() {
@@ -106,10 +110,10 @@ function renderAuth() {
     if (currentUser) {
         let badges = '';
         if (currentUser.is_admin) badges += '<span class="badge admin">ADMIN</span>';
-        if (currentUser.is_pro) badges += '<span class="badge vip">VIP</span>';
+        if (currentUser.verified) badges += '<span class="badge vip">VIP</span>';
         el.innerHTML = `${currentUser.email} ${badges} <button onclick="logout()">Logi välja</button>`;
         document.getElementById("newPost").style.display = "block";
-        vipPromo.style.display = (currentUser.is_pro || currentUser.is_admin) ? 'none' : 'block';
+        vipPromo.style.display = (currentUser.verified || currentUser.is_admin) ? 'none' : 'block';
     } else {
         el.innerHTML = `<button onclick="document.getElementById('authBox').style.display='block'">Logi sisse / Registreeri</button>`;
         vipPromo.style.display = 'none';
@@ -146,12 +150,13 @@ async function loadMyVotes() {
 async function loadPosts() {
     document.getElementById("errorBox").style.display = "none";
     try {
-        let filter = "";
-        if (!currentUser) filter = 'status = "completed"';
-        else if (!currentUser.is_admin) filter = `status = "completed" || author = "${currentUser.id}"`;
-
-        const postsData = await pb.collection("posts").getFullList({sort:"-created", expand:"author", filter});
-        const commentsData = await pb.collection("comments").getFullList({sort:"created", expand:"user"});
+        const postsData = await pb.collection("posts").getFullList({sort:"-created", expand:"author"});
+        let commentsData = [];
+        try {
+            commentsData = await pb.collection("comments").getFullList({sort:"created", expand:"user"});
+        } catch (e) {
+            commentsData = [];
+        }
         const commentsByPost = {};
         commentsData.forEach(c => { 
             if(!commentsByPost[c.post]) commentsByPost[c.post]=[]; 
@@ -161,12 +166,14 @@ async function loadPosts() {
         document.getElementById("posts").innerHTML = postsData.map(post => {
             const author = post.expand?.author || {};
             const isAdmin = currentUser?.is_admin || false;
+            const isVip = currentUser?.verified || false;
+            const canEditPost = !!currentUser && (isAdmin || (isVip && post.author === currentUser.id));
             const myVote = [...myVotes].find(v=>v.startsWith(post.id+":"))?.split(":")[1] || null;
             const score = (post.upvotes||0) - (post.downvotes||0);
 
             let cls = `card post ${post.status}`;
             if(author.is_admin) cls += " is-admin-post";
-            else if(author.is_pro) cls += " is-vip";
+            else if(author.verified) cls += " is-vip";
 
             let badge = "";
             if(post.status==="under-review") badge = '<span class="badge pending">Ülevaatusel</span>';
@@ -185,13 +192,23 @@ async function loadPosts() {
                     <p>${post.description}</p>
                     <div class="meta">${author.email||"Anonüümne"} ${badge}</div>
                    
-                    ${isAdmin ? `
+                    ${(isAdmin || canEditPost) ? `
                     <div style="margin:12px 0;display:flex;gap:8px;flex-wrap:wrap;">
+                        ${canEditPost ? `<button class="outline" onclick="startEditPost('${post.id}','${encodeURIComponent(post.title || "")}','${encodeURIComponent(post.description || "")}')">Muuda</button>` : ''}
                         ${post.status==="under-review" ? `<button class="success" onclick="moderate('${post.id}','completed')">Teostatud ✓</button><button class="danger" onclick="moderate('${post.id}','rejected')">Lükata tagasi ✗</button>` : ''}
                         ${post.status==="rejected" ? `<button class="success outline" onclick="moderate('${post.id}','under-review')">Tagasi ülevaatusele</button>` : ''}
-                        <button onclick="toggleVip('${post.author}', ${!!author.is_pro})" style="background:var(--vip); color:black;">${author.is_pro ? 'Võta VIP ära' : 'Anna VIP'}</button>
-                        <button class="danger outline" onclick="deletePost('${post.id}')">Kustuta</button>
+                        ${isAdmin ? `<button onclick="toggleVip('${post.author}', ${!!author.verified})" style="background:var(--vip); color:black;">${author.verified ? 'Võta VIP ära' : 'Anna VIP'}</button>` : ''}
+                        ${isAdmin ? `<button class="danger outline" onclick="deletePost('${post.id}')">Kustuta</button>` : ''}
                     </div>` : ""}
+
+                    <div id="edit-${post.id}" class="card" style="display:none; margin-top:8px;">
+                        <input id="edit-title-${post.id}" placeholder="Uus pealkiri">
+                        <textarea id="edit-desc-${post.id}" placeholder="Uus kirjeldus"></textarea>
+                        <div style="display:flex; gap:8px; margin-top:8px;">
+                            <button class="primary" onclick="savePostEdit('${post.id}')">Salvesta</button>
+                            <button class="outline" onclick="cancelEditPost('${post.id}')">Tühista</button>
+                        </div>
+                    </div>
                    
                     <div style="margin-top:16px;">
                         ${(commentsByPost[post.id]||[]).map(c=>`<div class="comment"><strong>${c.expand?.user?.email||"Anonüümne"}</strong><p>${c.text}</p></div>`).join("") || "<small>Kommentaare pole</small>"}
@@ -215,29 +232,49 @@ async function castVote(postId, direction) {
         const post = await pb.collection("posts").getOne(postId, {expand:"author"});
         if (post.author === currentUser.id) return alert("Ei saa hääletada oma ettepaneku poolt");
 
-        // Удаляем ВСЕ старые голоса пользователя за этот пост
+        // Find current vote for this post (if any) to apply correct score delta.
         const existingVotes = await pb.collection("votes").getFullList({
             filter: `user="${currentUser.id}" && post="${postId}"`
         });
-        for (const vote of existingVotes) {
-            await pb.collection("votes").delete(vote.id);
-        }
 
-        // Создаём новый голос
-        await pb.collection("votes").create({
-            user: currentUser.id, 
-            post: postId, 
-            direction: direction
-        });
+        const existingVote = existingVotes[0] || null;
+        const previousDirection = existingVote ? Number(existingVote.direction) : 0;
 
-        // Обновляем счётчики (современный синтаксис без pb.raw)
-        const updateData = {};
-        if (direction === 1) {
-            updateData["upvotes+"] = 1;
+        let upDelta = 0;
+        let downDelta = 0;
+
+        if (existingVote && previousDirection === direction) {
+            // Clicking the same direction removes the vote.
+            await pb.collection("votes").delete(existingVote.id);
+            if (direction === 1) upDelta = -1;
+            if (direction === -1) downDelta = -1;
+        } else if (existingVote) {
+            // Switch direction and rebalance both counters.
+            await pb.collection("votes").update(existingVote.id, { direction });
+            if (previousDirection === 1) upDelta = -1;
+            if (previousDirection === -1) downDelta = -1;
+            if (direction === 1) upDelta += 1;
+            if (direction === -1) downDelta += 1;
         } else {
-            updateData["downvotes+"] = 1;
+            // Create first vote.
+            await pb.collection("votes").create({
+                user: currentUser.id,
+                post: postId,
+                direction: direction
+            });
+            if (direction === 1) upDelta = 1;
+            if (direction === -1) downDelta = 1;
         }
-        await pb.collection("posts").update(postId, updateData);
+
+        const updateData = {};
+        if (upDelta > 0) updateData["upvotes+"] = upDelta;
+        if (upDelta < 0) updateData["upvotes-"] = Math.abs(upDelta);
+        if (downDelta > 0) updateData["downvotes+"] = downDelta;
+        if (downDelta < 0) updateData["downvotes-"] = Math.abs(downDelta);
+
+        if (Object.keys(updateData).length) {
+            await pb.collection("posts").update(postId, updateData);
+        }
 
         await loadMyVotes();
         await loadPosts();
@@ -254,6 +291,34 @@ async function moderate(id, status) {
     if (!confirm(`Muuta staatus "${status}"?`)) return;
     await pb.collection("posts").update(id, {status});
     loadPosts();
+}
+
+function startEditPost(postId, titleEncoded, descEncoded) {
+    const box = document.getElementById(`edit-${postId}`);
+    const title = document.getElementById(`edit-title-${postId}`);
+    const desc = document.getElementById(`edit-desc-${postId}`);
+    if (!box || !title || !desc) return;
+    title.value = decodeURIComponent(titleEncoded || "");
+    desc.value = decodeURIComponent(descEncoded || "");
+    box.style.display = "block";
+}
+
+function cancelEditPost(postId) {
+    const box = document.getElementById(`edit-${postId}`);
+    if (box) box.style.display = "none";
+}
+
+async function savePostEdit(postId) {
+    const title = document.getElementById(`edit-title-${postId}`)?.value.trim();
+    const description = document.getElementById(`edit-desc-${postId}`)?.value.trim();
+    if (!title) return alert("Pealkiri on kohustuslik");
+    try {
+        await pb.collection("posts").update(postId, { title, description });
+        cancelEditPost(postId);
+        await loadPosts();
+    } catch (e) {
+        alert("Muutmine ebaõnnestus");
+    }
 }
 
 async function deletePost(id) {
@@ -284,7 +349,7 @@ async function createPost() {
 async function toggleVip(userId, isCurrentlyPro) {
     if (!confirm(isCurrentlyPro ? "Võtta VIP staatus ära?" : "Anna VIP staatus?")) return;
     try {
-        await pb.collection('users').update(userId, { "is_pro": !isCurrentlyPro });
+        await pb.collection('users').update(userId, { verified: !isCurrentlyPro });
         loadPosts();
     } catch(e) { alert("Viga VIP muutmisel!"); }
 }
