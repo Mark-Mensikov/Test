@@ -81,11 +81,24 @@ pb.autoCancellation(false);
 let currentUser = null;
 let myVotes = new Set();
 
+function isVip(user) {
+    return !!(user && (user.verified || user.is_pro));
+}
+
+async function setVipFlag(userId, enabled) {
+    try {
+        return await pb.collection('users').update(userId, { verified: enabled });
+    } catch (err) {
+        // Backward compatibility for older schemas that still use is_pro.
+        return await pb.collection('users').update(userId, { is_pro: enabled });
+    }
+}
+
 window.onload = async () => {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('payment') === 'success' && pb.authStore.isValid) {
         try {
-            await pb.collection('users').update(pb.authStore.model.id, { verified: true });
+            await setVipFlag(pb.authStore.model.id, true);
             await pb.collection('users').authRefresh();
             window.history.replaceState({}, document.title, "/");
         } catch(e) { console.error(e); }
@@ -110,10 +123,10 @@ function renderAuth() {
     if (currentUser) {
         let badges = '';
         if (currentUser.is_admin) badges += '<span class="badge admin">ADMIN</span>';
-        if (currentUser.verified) badges += '<span class="badge vip">VIP</span>';
+        if (isVip(currentUser)) badges += '<span class="badge vip">VIP</span>';
         el.innerHTML = `${currentUser.email} ${badges} <button onclick="logout()">Logi välja</button>`;
         document.getElementById("newPost").style.display = "block";
-        vipPromo.style.display = (currentUser.verified || currentUser.is_admin) ? 'none' : 'block';
+        vipPromo.style.display = (isVip(currentUser) || currentUser.is_admin) ? 'none' : 'block';
     } else {
         el.innerHTML = `<button onclick="document.getElementById('authBox').style.display='block'">Logi sisse / Registreeri</button>`;
         vipPromo.style.display = 'none';
@@ -166,14 +179,15 @@ async function loadPosts() {
         document.getElementById("posts").innerHTML = postsData.map(post => {
             const author = post.expand?.author || {};
             const isAdmin = currentUser?.is_admin || false;
-            const isVip = currentUser?.verified || false;
-            const canEditPost = !!currentUser && (isAdmin || (isVip && post.author === currentUser.id));
+            const currentUserIsVip = isVip(currentUser);
+            const authorIsVip = isVip(author);
+            const canEditPost = !!currentUser && (isAdmin || (currentUserIsVip && post.author === currentUser.id));
             const myVote = [...myVotes].find(v=>v.startsWith(post.id+":"))?.split(":")[1] || null;
             const score = (post.upvotes||0) - (post.downvotes||0);
 
             let cls = `card post ${post.status}`;
             if(author.is_admin) cls += " is-admin-post";
-            else if(author.verified) cls += " is-vip";
+            else if(authorIsVip) cls += " is-vip";
 
             let badge = "";
             if(post.status==="under-review") badge = '<span class="badge pending">Ülevaatusel</span>';
@@ -197,7 +211,7 @@ async function loadPosts() {
                         ${canEditPost ? `<button class="outline" onclick="startEditPost('${post.id}','${encodeURIComponent(post.title || "")}','${encodeURIComponent(post.description || "")}')">Muuda</button>` : ''}
                         ${post.status==="under-review" ? `<button class="success" onclick="moderate('${post.id}','completed')">Teostatud ✓</button><button class="danger" onclick="moderate('${post.id}','rejected')">Lükata tagasi ✗</button>` : ''}
                         ${post.status==="rejected" ? `<button class="success outline" onclick="moderate('${post.id}','under-review')">Tagasi ülevaatusele</button>` : ''}
-                        ${isAdmin ? `<button onclick="toggleVip('${post.author}', ${!!author.verified})" style="background:var(--vip); color:black;">${author.verified ? 'Võta VIP ära' : 'Anna VIP'}</button>` : ''}
+                        ${isAdmin ? `<button onclick="toggleVip('${post.author}', ${authorIsVip})" style="background:var(--vip); color:black;">${authorIsVip ? 'Võta VIP ära' : 'Anna VIP'}</button>` : ''}
                         ${isAdmin ? `<button class="danger outline" onclick="deletePost('${post.id}')">Kustuta</button>` : ''}
                     </div>` : ""}
 
@@ -211,7 +225,10 @@ async function loadPosts() {
                     </div>
                    
                     <div style="margin-top:16px;">
-                        ${(commentsByPost[post.id]||[]).map(c=>`<div class="comment"><strong>${c.expand?.user?.email||"Anonüümne"}</strong><p>${c.text}</p></div>`).join("") || "<small>Kommentaare pole</small>"}
+                        ${(commentsByPost[post.id]||[]).map(c => {
+                            const canDeleteComment = !!currentUser && (isAdmin || c.user === currentUser.id);
+                            return `<div class="comment"><strong>${c.expand?.user?.email||"Anonüümne"}</strong><p>${c.text}</p>${canDeleteComment ? `<button class="danger outline" onclick="deleteComment('${c.id}')">Kustuta kommentaar</button>` : ''}</div>`;
+                        }).join("") || "<small>Kommentaare pole</small>"}
                         ${currentUser ? `<form class="comment-form" onsubmit="addComment(event,'${post.id}');return false;"><input type="text" id="c-${post.id}" placeholder="Kommentaar..." required><button class="primary">Saada</button></form>` : ""}
                     </div>
                 </div>
@@ -288,6 +305,7 @@ async function castVote(postId, direction) {
 }
 
 async function moderate(id, status) {
+    if (!currentUser?.is_admin) return alert("Puuduvad õigused");
     if (!confirm(`Muuta staatus "${status}"?`)) return;
     await pb.collection("posts").update(id, {status});
     loadPosts();
@@ -322,9 +340,24 @@ async function savePostEdit(postId) {
 }
 
 async function deletePost(id) {
+    if (!currentUser?.is_admin) return alert("Puuduvad õigused");
     if (!confirm("Kustutada ettepanek lõplikult?")) return;
     await pb.collection("posts").delete(id);
     loadPosts();
+}
+
+async function deleteComment(commentId) {
+    if (!currentUser) return alert("Logi sisse");
+    try {
+        const comment = await pb.collection("comments").getOne(commentId);
+        const canDelete = currentUser.is_admin || comment.user === currentUser.id;
+        if (!canDelete) return alert("Saad kustutada ainult oma kommentaare");
+        if (!confirm("Kustutada kommentaar?")) return;
+        await pb.collection("comments").delete(commentId);
+        await loadPosts();
+    } catch (e) {
+        alert("Kommentaari kustutamine ebaõnnestus");
+    }
 }
 
 async function addComment(e, postId) {
@@ -347,9 +380,10 @@ async function createPost() {
 }
 
 async function toggleVip(userId, isCurrentlyPro) {
+    if (!currentUser?.is_admin) return alert("Puuduvad õigused");
     if (!confirm(isCurrentlyPro ? "Võtta VIP staatus ära?" : "Anna VIP staatus?")) return;
     try {
-        await pb.collection('users').update(userId, { verified: !isCurrentlyPro });
+        await setVipFlag(userId, !isCurrentlyPro);
         loadPosts();
     } catch(e) { alert("Viga VIP muutmisel!"); }
 }
