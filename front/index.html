@@ -163,7 +163,21 @@ async function loadMyVotes() {
 async function loadPosts() {
     document.getElementById("errorBox").style.display = "none";
     try {
-        const postsData = await pb.collection("posts").getFullList({sort:"-created", expand:"author"});
+        let filter = "";
+        if (!currentUser || !currentUser.is_admin) {
+            // Only admin can see posts that are still under review or rejected.
+            filter = 'status = "completed"';
+        }
+
+        const postsData = await pb.collection("posts").getFullList({sort:"-created", expand:"author", filter});
+        const votesData = await pb.collection("votes").getFullList({ fields: "post,direction" });
+        const scoreByPost = {};
+        votesData.forEach(v => {
+            const dir = Number(v.direction) || 0;
+            if (!scoreByPost[v.post]) scoreByPost[v.post] = 0;
+            scoreByPost[v.post] += dir;
+        });
+
         let commentsData = [];
         try {
             commentsData = await pb.collection("comments").getFullList({sort:"created", expand:"user"});
@@ -183,7 +197,7 @@ async function loadPosts() {
             const authorIsVip = isVip(author);
             const canEditPost = !!currentUser && (isAdmin || (currentUserIsVip && post.author === currentUser.id));
             const myVote = [...myVotes].find(v=>v.startsWith(post.id+":"))?.split(":")[1] || null;
-            const score = (post.upvotes||0) - (post.downvotes||0);
+            const score = scoreByPost[post.id] || 0;
 
             let cls = `card post ${post.status}`;
             if(author.is_admin) cls += " is-admin-post";
@@ -257,21 +271,12 @@ async function castVote(postId, direction) {
         const existingVote = existingVotes[0] || null;
         const previousDirection = existingVote ? Number(existingVote.direction) : 0;
 
-        let upDelta = 0;
-        let downDelta = 0;
-
         if (existingVote && previousDirection === direction) {
             // Clicking the same direction removes the vote.
             await pb.collection("votes").delete(existingVote.id);
-            if (direction === 1) upDelta = -1;
-            if (direction === -1) downDelta = -1;
         } else if (existingVote) {
-            // Switch direction and rebalance both counters.
+            // Switch direction.
             await pb.collection("votes").update(existingVote.id, { direction });
-            if (previousDirection === 1) upDelta = -1;
-            if (previousDirection === -1) downDelta = -1;
-            if (direction === 1) upDelta += 1;
-            if (direction === -1) downDelta += 1;
         } else {
             // Create first vote.
             await pb.collection("votes").create({
@@ -279,18 +284,6 @@ async function castVote(postId, direction) {
                 post: postId,
                 direction: direction
             });
-            if (direction === 1) upDelta = 1;
-            if (direction === -1) downDelta = 1;
-        }
-
-        const updateData = {};
-        if (upDelta > 0) updateData["upvotes+"] = upDelta;
-        if (upDelta < 0) updateData["upvotes-"] = Math.abs(upDelta);
-        if (downDelta > 0) updateData["downvotes+"] = downDelta;
-        if (downDelta < 0) updateData["downvotes-"] = Math.abs(downDelta);
-
-        if (Object.keys(updateData).length) {
-            await pb.collection("posts").update(postId, updateData);
         }
 
         await loadMyVotes();
