@@ -1,6 +1,3 @@
-Отлично! Чтобы документация соответствовала твоему итоговому коду, в нее нужно добавить информацию о ролях пользователей и админ-панели. Это покажет преподавателю, что проект продуман с точки зрения управления контентом.
-
-Вот обновленный и полный текст для твоего README.md:
 
 💡 SaaS Tagasiside Portaal (Feedback Board) PRO
 See on täisfunktsionaalne SaaS-rakendus, mis võimaldab kasutajatel esitada tootearenduse ettepanekuid, nende poolt hääletada ja hallata platvormi sisu vastavalt rollidele.
