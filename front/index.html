@@ -44,6 +44,7 @@ button.primary { background:var(--primary); color:white; }
 button.success { background:var(--success); color:white; }
 button.danger { background:var(--danger); color:white; }
 button.outline { border:1px solid #ccc; background:white; }
+button.danger.outline { border:1px solid var(--danger); background:#fff5f5; color:var(--danger); font-weight:600; }
 #errorBox { background:#ffebee; color:#c62828; padding:16px; margin:16px 0; border-radius:8px; border-left:5px solid #c62828; display:none; }
 .vip-promo { background:#fff9c4; border:1px solid #ffe082; }
 </style>
@@ -237,6 +238,20 @@ async function loadPosts() {
             commentsByPost[c.post].push(c); 
         });
 
+        const getPostScore = (post) => {
+            const myVote = [...myVotes].find(v=>v.startsWith(post.id+":"))?.split(":")[1] || null;
+            const hasVotesAggregate = Object.prototype.hasOwnProperty.call(scoreByPost, post.id);
+            const countersScore = (post.upvotes || 0) - (post.downvotes || 0);
+            const ownVoteFallback = Number(myVote) || 0;
+            return hasVotesAggregate ? scoreByPost[post.id] : (countersScore + ownVoteFallback);
+        };
+
+        postsData.sort((a, b) => {
+            const scoreDiff = getPostScore(b) - getPostScore(a);
+            if (scoreDiff !== 0) return scoreDiff;
+            return new Date(b.created).getTime() - new Date(a.created).getTime();
+        });
+
         document.getElementById("posts").innerHTML = postsData.map(post => {
             const author = post.expand?.author || {};
             const isAdmin = currentUser?.is_admin || false;
@@ -245,10 +260,7 @@ async function loadPosts() {
             const authorDisplay = currentUser ? (userEmailById[post.author] || author.email || "Kasutaja") : "Anonüümne";
             const canEditPost = !!currentUser && (isAdmin || (currentUserIsVip && post.author === currentUser.id));
             const myVote = [...myVotes].find(v=>v.startsWith(post.id+":"))?.split(":")[1] || null;
-            const hasVotesAggregate = Object.prototype.hasOwnProperty.call(scoreByPost, post.id);
-            const countersScore = (post.upvotes || 0) - (post.downvotes || 0);
-            const ownVoteFallback = Number(myVote) || 0;
-            const score = hasVotesAggregate ? scoreByPost[post.id] : (countersScore + ownVoteFallback);
+            const score = getPostScore(post);
 
             let cls = `card post ${post.status}`;
             if(author.is_admin) cls += " is-admin-post";
