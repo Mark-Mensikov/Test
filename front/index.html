@@ -36,6 +36,8 @@ body { font-family: system-ui, sans-serif; max-width:900px; margin:0 auto; paddi
 .success { background:var(--success); color:white; }
 .danger { background:var(--danger); color:white; }
 .comment { background:var(--light); padding:10px; margin:8px 0; border-radius:8px; }
+.comment-actions { margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; }
+.reply-hint { margin:8px 0; font-size:0.9rem; color:#333; }
 .comment-form { display:flex; gap:8px; margin-top:12px; }
 button { padding:6px 12px; border:none; border-radius:6px; cursor:pointer; }
 button.primary { background:var(--primary); color:white; }
@@ -80,6 +82,7 @@ pb.autoCancellation(false);
 
 let currentUser = null;
 let myVotes = new Set();
+const replyTargetByPost = {};
 
 function isVip(user) {
     return !!(user && (user.verified || user.is_pro));
@@ -169,7 +172,12 @@ async function loadPosts() {
             filter = 'status = "completed"';
         }
 
-        const postsData = await pb.collection("posts").getFullList({sort:"-created", expand:"author", filter});
+        const postsData = await pb.collection("posts").getFullList({
+            sort:"-created",
+            expand:"author",
+            filter,
+            fields:"id,title,description,status,author,created,expand.author.id,expand.author.email,expand.author.is_admin,expand.author.verified,expand.author.is_pro"
+        });
         const votesData = await pb.collection("votes").getFullList({ fields: "post,direction" });
         const scoreByPost = {};
         votesData.forEach(v => {
@@ -195,6 +203,7 @@ async function loadPosts() {
             const isAdmin = currentUser?.is_admin || false;
             const currentUserIsVip = isVip(currentUser);
             const authorIsVip = isVip(author);
+            const authorDisplay = currentUser ? (author.email || "Kasutaja") : "Anonüümne";
             const canEditPost = !!currentUser && (isAdmin || (currentUserIsVip && post.author === currentUser.id));
             const myVote = [...myVotes].find(v=>v.startsWith(post.id+":"))?.split(":")[1] || null;
             const score = scoreByPost[post.id] || 0;
@@ -218,7 +227,7 @@ async function loadPosts() {
                 <div style="flex:1">
                     <h3>${post.title}</h3>
                     <p>${post.description}</p>
-                    <div class="meta">${author.email||"Anonüümne"} ${badge}</div>
+                    <div class="meta">${authorDisplay} ${badge}</div>
                    
                     ${(isAdmin || canEditPost) ? `
                     <div style="margin:12px 0;display:flex;gap:8px;flex-wrap:wrap;">
@@ -241,9 +250,11 @@ async function loadPosts() {
                     <div style="margin-top:16px;">
                         ${(commentsByPost[post.id]||[]).map(c => {
                             const canDeleteComment = !!currentUser && (isAdmin || c.user === currentUser.id);
-                            return `<div class="comment"><strong>${c.expand?.user?.email||"Anonüümne"}</strong><p>${c.text}</p>${canDeleteComment ? `<button class="danger outline" onclick="deleteComment('${c.id}')">Kustuta kommentaar</button>` : ''}</div>`;
+                            const commentAuthor = c.expand?.user?.email || "Anonüümne";
+                            const canReply = !!currentUser;
+                            return `<div class="comment"><strong>${commentAuthor}</strong><p>${c.text}</p><div class="comment-actions">${canReply ? `<button class="outline" onclick="setReplyTarget('${post.id}','${c.id}','${encodeURIComponent(commentAuthor)}')">Vasta</button>` : ''}${canDeleteComment ? `<button class="danger outline" onclick="deleteComment('${c.id}')">Kustuta kommentaar</button>` : ''}</div></div>`;
                         }).join("") || "<small>Kommentaare pole</small>"}
-                        ${currentUser ? `<form class="comment-form" onsubmit="addComment(event,'${post.id}');return false;"><input type="text" id="c-${post.id}" placeholder="Kommentaar..." required><button class="primary">Saada</button></form>` : ""}
+                        ${currentUser ? `<div id="reply-hint-${post.id}" class="reply-hint" style="display:none;"></div><form class="comment-form" onsubmit="addComment(event,'${post.id}');return false;"><input type="text" id="c-${post.id}" placeholder="Kommentaar..." required><button class="primary">Saada</button><button type="button" class="outline" onclick="clearReplyTarget('${post.id}')">Tühista vastus</button></form>` : ""}
                     </div>
                 </div>
             </div>`;
@@ -275,8 +286,17 @@ async function castVote(postId, direction) {
             // Clicking the same direction removes the vote.
             await pb.collection("votes").delete(existingVote.id);
         } else if (existingVote) {
-            // Switch direction.
-            await pb.collection("votes").update(existingVote.id, { direction });
+            // Switch direction. Some API rules allow delete/create but forbid update.
+            try {
+                await pb.collection("votes").update(existingVote.id, { direction });
+            } catch (switchErr) {
+                await pb.collection("votes").delete(existingVote.id);
+                await pb.collection("votes").create({
+                    user: currentUser.id,
+                    post: postId,
+                    direction: direction
+                });
+            }
         } else {
             // Create first vote.
             await pb.collection("votes").create({
@@ -291,9 +311,34 @@ async function castVote(postId, direction) {
     } catch (err) {
         console.error("castVote error:", err);
         let msg = "Viga hääletamisel";
-        if (err.status === 400) msg = "400: Kontrolli API Rules (votes ja posts)";
-        if (err.status === 403) msg = "Puuduvad õigused";
+        if (err.status === 400) msg = "400: Kontrolli votes API Rules või direction välja tüüpi";
+        if (err.status === 403) msg = "Puuduvad õigused votes collection-is";
+        if (err?.response?.message) msg += `\n${err.response.message}`;
         alert(msg);
+    }
+}
+
+function setReplyTarget(postId, commentId, encodedAuthor) {
+    const author = decodeURIComponent(encodedAuthor || "Anonüümne");
+    replyTargetByPost[postId] = { commentId, author };
+    const hintEl = document.getElementById(`reply-hint-${postId}`);
+    if (hintEl) {
+        hintEl.style.display = "block";
+        hintEl.textContent = `Vastus kommentaarile: ${author}`;
+    }
+    const input = document.getElementById(`c-${postId}`);
+    if (input) {
+        input.focus();
+        if (!input.value.trim()) input.value = `@${author} `;
+    }
+}
+
+function clearReplyTarget(postId) {
+    delete replyTargetByPost[postId];
+    const hintEl = document.getElementById(`reply-hint-${postId}`);
+    if (hintEl) {
+        hintEl.style.display = "none";
+        hintEl.textContent = "";
     }
 }
 
@@ -355,10 +400,16 @@ async function deleteComment(commentId) {
 
 async function addComment(e, postId) {
     e.preventDefault();
-    const text = document.getElementById(`c-${postId}`).value.trim();
+    const input = document.getElementById(`c-${postId}`);
+    let text = input.value.trim();
     if (!text) return;
+    const replyTarget = replyTargetByPost[postId];
+    if (replyTarget && !text.startsWith(`@${replyTarget.author}`)) {
+        text = `@${replyTarget.author} ${text}`;
+    }
     await pb.collection("comments").create({post:postId, user:currentUser.id, text});
-    document.getElementById(`c-${postId}`).value = "";
+    input.value = "";
+    clearReplyTarget(postId);
     loadPosts();
 }
 
