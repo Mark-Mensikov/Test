@@ -84,6 +84,15 @@ let currentUser = null;
 let myVotes = new Set();
 const replyTargetByPost = {};
 
+function setMyVote(postId, directionOrNull) {
+    for (const item of [...myVotes]) {
+        if (item.startsWith(`${postId}:`)) myVotes.delete(item);
+    }
+    if (directionOrNull === 1 || directionOrNull === -1) {
+        myVotes.add(`${postId}:${directionOrNull}`);
+    }
+}
+
 function isVip(user) {
     return !!(user && (user.verified || user.is_pro));
 }
@@ -192,6 +201,36 @@ async function loadPosts() {
         } catch (e) {
             commentsData = [];
         }
+
+        const userEmailById = {};
+        if (currentUser) {
+            postsData.forEach(p => {
+                const email = p.expand?.author?.email;
+                if (email) userEmailById[p.author] = email;
+            });
+            commentsData.forEach(c => {
+                const email = c.expand?.user?.email;
+                if (email) userEmailById[c.user] = email;
+            });
+
+            const missingUserIds = new Set();
+            postsData.forEach(p => {
+                if (p.author && !userEmailById[p.author]) missingUserIds.add(p.author);
+            });
+            commentsData.forEach(c => {
+                if (c.user && !userEmailById[c.user]) missingUserIds.add(c.user);
+            });
+
+            await Promise.allSettled([...missingUserIds].map(async userId => {
+                try {
+                    const u = await pb.collection("users").getOne(userId, { fields: "email" });
+                    if (u?.email) userEmailById[userId] = u.email;
+                } catch (_) {
+                    // Keep fallback display when user email is not readable.
+                }
+            }));
+        }
+
         const commentsByPost = {};
         commentsData.forEach(c => { 
             if(!commentsByPost[c.post]) commentsByPost[c.post]=[]; 
@@ -203,10 +242,13 @@ async function loadPosts() {
             const isAdmin = currentUser?.is_admin || false;
             const currentUserIsVip = isVip(currentUser);
             const authorIsVip = isVip(author);
-            const authorDisplay = currentUser ? (author.email || "Kasutaja") : "Anonüümne";
+            const authorDisplay = currentUser ? (userEmailById[post.author] || author.email || "Kasutaja") : "Anonüümne";
             const canEditPost = !!currentUser && (isAdmin || (currentUserIsVip && post.author === currentUser.id));
             const myVote = [...myVotes].find(v=>v.startsWith(post.id+":"))?.split(":")[1] || null;
-            const score = scoreByPost[post.id] || 0;
+            const hasVotesAggregate = Object.prototype.hasOwnProperty.call(scoreByPost, post.id);
+            const countersScore = (post.upvotes || 0) - (post.downvotes || 0);
+            const ownVoteFallback = Number(myVote) || 0;
+            const score = hasVotesAggregate ? scoreByPost[post.id] : (countersScore + ownVoteFallback);
 
             let cls = `card post ${post.status}`;
             if(author.is_admin) cls += " is-admin-post";
@@ -250,7 +292,9 @@ async function loadPosts() {
                     <div style="margin-top:16px;">
                         ${(commentsByPost[post.id]||[]).map(c => {
                             const canDeleteComment = !!currentUser && (isAdmin || c.user === currentUser.id);
-                            const commentAuthor = c.expand?.user?.email || "Anonüümne";
+                            const commentAuthor = currentUser
+                                ? (userEmailById[c.user] || c.expand?.user?.email || "Kasutaja")
+                                : "Anonüümne";
                             const canReply = !!currentUser;
                             return `<div class="comment"><strong>${commentAuthor}</strong><p>${c.text}</p><div class="comment-actions">${canReply ? `<button class="outline" onclick="setReplyTarget('${post.id}','${c.id}','${encodeURIComponent(commentAuthor)}')">Vasta</button>` : ''}${canDeleteComment ? `<button class="danger outline" onclick="deleteComment('${c.id}')">Kustuta kommentaar</button>` : ''}</div></div>`;
                         }).join("") || "<small>Kommentaare pole</small>"}
@@ -285,6 +329,7 @@ async function castVote(postId, direction) {
         if (existingVote && previousDirection === direction) {
             // Clicking the same direction removes the vote.
             await pb.collection("votes").delete(existingVote.id);
+            setMyVote(postId, null);
         } else if (existingVote) {
             // Switch direction. Some API rules allow delete/create but forbid update.
             try {
@@ -297,6 +342,7 @@ async function castVote(postId, direction) {
                     direction: direction
                 });
             }
+            setMyVote(postId, direction);
         } else {
             // Create first vote.
             await pb.collection("votes").create({
@@ -304,9 +350,10 @@ async function castVote(postId, direction) {
                 post: postId,
                 direction: direction
             });
+            setMyVote(postId, direction);
         }
 
-        await loadMyVotes();
+        await loadMyVotes().catch(() => {});
         await loadPosts();
     } catch (err) {
         console.error("castVote error:", err);
