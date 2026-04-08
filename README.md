@@ -1,65 +1,195 @@
+# SaaS Tagasiside Portaal PRO
 
-💡 SaaS Tagasiside Portaal (Feedback Board) PRO
-See on täisfunktsionaalne SaaS-rakendus, mis võimaldab kasutajatel esitada tootearenduse ettepanekuid, nende poolt hääletada ja hallata platvormi sisu vastavalt rollidele.
+See on lihtne tagasisideportaal, kus kasutajad saavad lisada ettepanekuid, neid hinnata, kommenteerida ja administraator saab sisu modereerida.
 
-🚀 Lingid
-Frontend: http://mbatwwnb4zirf6xd9k8f6dz7.176.112.158.3.sslip.io/
+## Ülevaade
 
-PocketBase Admin: http://pocketbase-hv4bvovfn86uwdafxs7d7p1s.176.112.158.3.sslip.io/_/
+Rakendus koosneb kahest osast:
 
-🛠 Tehniline stäkk
-Frontend: HTML5, CSS3, JavaScript (PocketBase SDK)
+- **Frontend**: HTML, CSS, JavaScript ja PocketBase SDK
+- **Backend**: väike Express server, mis serveerib frontend-i ja annab PocketBase URL-i läbi `/config` endpointi
 
-Backend: PocketBase (Andmebaas, Auth, failihaldus)
+## Käivitamine
 
-Maksemeetod: Stripe (Test Mode) integratsioon
+Frontend töötab Node.js serveri kaudu.
 
-Infrastructure: Coolify (Self-hosted Docker konteinerid)
+```bash
+cd front
+npm install
+npm start
+```
 
-🔑 Kasutajarollid ja õigused (RBAC)
-Rakenduses on rakendatud dünaamiline rollipõhine juurdepääsu kontroll:
+Rakendus kuulab vaikimisi pordil `3000`, kui `PORT` keskkonnamuutuja ei ole määratud.
 
-Külaline (Sisselogimata): Saab vaadata postituste nimekirja ja häälte arvu.
+## Rollid ja õigused
 
-Tavakasutaja:
+### Külaline
 
-Saab luua uusi ettepanekuid.
+- Saab näha ainult avalikke postitusi.
+- Postituse autorit ei kuvata, näidatakse `Anonüümne`.
+- Ei saa hääletada, kommenteerida ega postitada.
 
-Saab hääletada teiste postituste poolt (piirang: 1 hääl postituse kohta, enda poolt hääletada ei saa).
+### Tavaline kasutaja
 
-VIP Kasutaja (verified: true):
+- Saab luua uusi postitusi.
+- Saab hääletada teiste postituste poolt.
+- Ei saa hääletada omaenda postituse poolt.
+- Saab lisada kommentaare.
+- Saab kustutada ainult oma kommentaare.
+- Näeb postituste autorite e-posti aadresse.
 
-Kõik tavakasutaja õigused.
+### VIP kasutaja
 
-Õigus muuta (Edit) oma postitusi.
+- Kõik tavalise kasutaja õigused.
+- Saab muuta oma postitusi.
+- VIP staatust tähistatakse kuldse märgiga.
+- VIP staatus põhineb `verified` väljal, kuid rakendus toetab vajadusel ka vana `is_pro` välja.
 
-Visuaalne eristus: "VIP" märk ja esiletõstetud kuldne taust postitustel.
+### Administraator
 
-Administraator (is_admin: true):
+- Saab muuta kõiki postitusi.
+- Saab kustutada kõiki postitusi.
+- Saab kustutada kõiki kommentaare.
+- Saab anda ja eemaldada VIP staatust.
+- Näeb ka ülevaatusel olevaid ja tagasi lükatud postitusi.
 
-Täielik kontroll platvormi üle.
+## Postituste nähtavus
 
-Õigus muuta ja kustutada (Delete) kõiki postitusi sõltumata autorist.
+Praegune loogika on järgmine:
 
-💳 Stripe ja VIP-staatuse loogika
-Süsteem kasutab Stripe Payment Linki teenust.
+- **Külaline** näeb ainult `completed` postitusi.
+- **Tavaline kasutaja** näeb ainult `completed` postitusi.
+- **Administraator** näeb kõiki postitusi.
 
-Pärast edukat makset suunatakse kasutaja tagasi portaali parameetriga ?payment=success.
+Kui post on olekus `under-review`, siis seda näeb ainult administraator kuni ta muudab staatuse nähtavaks kõigile.
 
-Frontend tuvastab parameetri ja kutsub välja PocketBase API, et uuendada kasutaja profiilis väli verified: true.
+## Hääletamine
 
-See aktiveerib koheselt VIP-funktsionaalsuse ilma käsitsi sekkumiseta.
+Hääletamine töötab `votes` kollektsiooni kaudu.
 
-📦 Andmebaasi struktuur (Collections)
-users: Laiendatud väljadega verified (Boolean) ja is_admin (Boolean).
+- Üks kasutaja saab anda ühele postitusele ainult ühe hääle.
+- Hääle suund on `1` või `-1`.
+- Sama suuna uuesti vajutamine eemaldab hääle.
+- Vastassuunale üleminekul uuendatakse olemasolev hääl.
+- Postituste järjestus kuvatakse häälesumma järgi: suurema positiivse tulemusega postitused on eespool.
 
-posts: Pealkiri, kirjeldus, häälte arv, staatus ja seos autoriga.
+## Kommentaarid
 
-votes: Seoste tabel, mis kasutab Unique Index (user + post), et vältida topelthääletamist ja tagada andmete terviklikkus.
+- Kasutaja saab lisada kommentaare postitustele.
+- Kommentaarile saab vastata konkreetsele kommentaarile.
+- Tavaline kasutaja saab kustutada ainult oma kommentaare.
+- Administraator saab kustutada kõiki kommentaare.
 
-🛠 Paigaldus ja juurutamine
-Projekt on juurutatud Coolify platvormile, kasutades Dockerit.
+## VIP / Stripe
 
-PocketBase on seadistatud kasutama Persistent Volume'i, mis tagab andmete säilimise serveri taaskäivitamisel.
+VIP staatuse aktiveerimine on seotud Stripe testmaksega.
 
-API päringud on kaitstud PocketBase API Rules (Server-side validation) abil.
+- Kasutaja maksab Stripe Payment Linki kaudu.
+- Pärast edukat makset suunatakse ta tagasi rakendusse parameetriga `?payment=success`.
+- Frontend proovib seada kasutaja profiilile `verified = true`.
+- Kui skeemis kasutatakse veel vana välja, toetatakse ka `is_pro` fallback-i.
+
+## PocketBase kollektsioonid
+
+### `users`
+
+Laiendatud auth-kollektsioon.
+
+Olulised väljad:
+
+- `email`
+- `emailVisibility`
+- `verified`
+- `name`
+- `avatar`
+- `is_admin`
+- `is_pro`
+
+Märkus: kui soovid, et autoriseeritud kasutajad näeksid teiste kasutajate e-posti aadresse, peab PocketBase’i seadistus seda lubama või peab kasutama eraldi nähtavat välja.
+
+### `posts`
+
+Olulised väljad:
+
+- `title`
+- `description`
+- `author`
+- `status`
+- `votes` (seda välja võib skeemis hoida, kuid praegune frontend arvutab skoori `votes` kollektsioonist)
+
+Staatused:
+
+- `under-review`
+- `completed`
+- `rejected`
+
+### `votes`
+
+Olulised väljad:
+
+- `user`
+- `post`
+- `direction` (`1` või `-1`)
+
+Oluline:
+
+- `user + post` peab jääma unikaalseks.
+- `direction` peab olema number ja soovitavalt täisarv.
+
+### `comments`
+
+Olulised väljad:
+
+- `post`
+- `user`
+- `text`
+
+## Soovitatavad PocketBase reeglid
+
+Need reeglid peavad sobima praeguse frontend-i loogikaga.
+
+### `posts`
+
+- `listRule`: `status = "completed" || @request.auth.is_admin = true`
+- `viewRule`: `status = "completed" || @request.auth.is_admin = true`
+- `createRule`: `@request.auth.id != ""`
+- `updateRule`: `@request.auth.is_admin = true || (author = @request.auth.id && (@request.auth.is_pro = true || @request.auth.verified = true))`
+- `deleteRule`: `@request.auth.is_admin = true`
+
+### `votes`
+
+- `listRule`: `@request.auth.id != ""`
+- `viewRule`: `@request.auth.id != ""`
+- `createRule`: `user = @request.auth.id`
+- `updateRule`: `user = @request.auth.id`
+- `deleteRule`: `user = @request.auth.id`
+
+### `comments`
+
+- `listRule`: `@request.auth.id != ""`
+- `viewRule`: `@request.auth.id != ""`
+- `createRule`: `@request.auth.id != "" && user = @request.auth.id`
+- `updateRule`: `user = @request.auth.id || @request.auth.is_admin = true`
+- `deleteRule`: `user = @request.auth.id || @request.auth.is_admin = true`
+
+### `users`
+
+- Kasutaja saab muuta oma profiili.
+- Administraator saab muuta teisi kasutajaid.
+- Kui kasutad e-posti kuvamist, kontrolli kindlasti `emailVisibility` seadet.
+
+## Tehnilised märkused
+
+- Frontend küsib PocketBase URL-i endpointist `/config`.
+- Rakendus kasutab PocketBase SDK-d brauseris.
+- Kommentaaride ja postituste värskendamine toimub otse PocketBase andmete põhjal.
+- UI-s kasutatakse lihtsat staatuse, rolli ja häälesaagi kuvamist.
+
+## Märkused arendajale
+
+Kui muudate PocketBase skeemi, kontrollige alati üle:
+
+- kas frontend kasutab ikka samu välja nimesid;
+- kas `verified` või `is_pro` on VIP loogika jaoks õige allikas;
+- kas `votes.direction` on olemas;
+- kas autorite e-posti aadressid on autoriseeritud kasutajatele nähtavad.
